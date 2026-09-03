@@ -1,8 +1,8 @@
 # The AI Rust-Modding Bible
 ## Part A — Why This Exists
 
-*Written for the person, not the AI. Part B is the technical half — this is the
-part that explains why Part B needs to exist at all.*
+*Written for the person, not the AI. Parts B and C are the technical halves —
+this is the part that explains why they need to exist at all.*
 
 ---
 
@@ -36,7 +36,7 @@ learn it from. Until now, it's been.
 
 ### What changed
 
-The rules in Part B aren't theory. Every one of them came from an actual
+The rules in Parts B and C aren't theory. Every one of them came from an actual
 mistake, an actual rejection, or an actual conversation with someone who
 reviews Rust plugins for a living and has genuinely no patience for sloppy
 work. Config handling that looked reasonable but wasn't. Migration logic that
@@ -45,12 +45,17 @@ the working, respected pattern is built a different way. Every rule exists
 because something real broke, or someone who actually knew what "good" looked
 like said "not like this" and explained why.
 
+This project used **two** AI agents on purpose — **Claude** and **Grok** —
+because they do not hit the same walls. Claude's findings are Part B. Grok's
+are Part C. Neither file is a rewrite of the other. Together they are the
+floor; either one alone is a hole.
+
 That's the part a prompt alone can't give you. You can ask an AI to "write
 clean, professional code" all day and it will agree enthusiastically and
 still produce something with real problems in it, because "clean and
 professional" isn't a fact any AI already has memorized for *this specific
 ecosystem* — Rust, Oxide, Carbon, the actual conventions this community has
-converged on. It has to be told. Part B is that telling.
+converged on. It has to be told. Parts B and C are that telling.
 
 ### What this document can't do for you
 
@@ -78,10 +83,10 @@ starting that process from zero.
 
 If you're using AI to build Rust plugins and you want the result to be
 something you could actually hand to a marketplace reviewer without wincing —
-this is the missing piece nobody hands you at the start. Part B is written to
-be given directly to your AI agent, in full, before it starts writing your
-mod. Paste it in, let it read the whole thing, then ask for what you actually
-want built.
+this is the missing piece nobody hands you at the start. Parts B and C are
+written to be given directly to your AI agent, in full, before it starts
+writing your mod. Paste both in (or point the agent at both raw links), let
+it read them, then ask for what you actually want built.
 
 It won't make your AI as good as having an experienced developer looking over
 its shoulder in real time. But it will mean the AI knows what that developer
@@ -89,4 +94,5 @@ would have said — before you ever have to ask.
 
 ---
 
-*Part B — the full technical ruleset — follows separately.*
+*Part B (Claude) and Part C (Grok) — the two technical rulesets — follow
+separately. Load both.*
