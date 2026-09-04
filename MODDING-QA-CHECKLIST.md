@@ -250,6 +250,11 @@ to grep/read for, not just the principle, so it's actually repeatable and not de
 ## 7. Defensive bounds / null-safety
 - [ ] Every chat/console command handler checks `args.Length` (or `arg.Args.Length`) before
   indexing into it.
+- [ ] **`ConsoleSystem.Arg.Args` is `Facepunch.StringView[]`, not `string[]`** — never index it
+  as a string or pass it where a `string[]` is expected; use `arg.GetString(i)` /
+  `arg.GetString(i, fallback)` or `.Select(a => a.ToString())`. This is a hard compile error on
+  the current Rust build, invisible to a read-through (MixThirdPerson 1.0.1, 2026-09-04) and
+  greppable: `Args\[\d+\]` without a trailing `.ToString()`.
 - [ ] **A global multiplier over `ItemDefinition.stackable` (or any per-item scale) must skip
   items whose vanilla value is 1** — weapons, tools, armour, deployables, anything with condition
   or a held entity — regardless of the multiplier or a per-item override. Rust tolerates a
@@ -3057,6 +3062,92 @@ Reviewed the final file cold, against all 12 categories, after the cold-boot pro
   consequence of that fix → consistency of *that* fix. The third pass found nothing beyond that
   one point, which is the signal the loop has converged — further passes on this file would be
   ceremony, not review.
+
+## MixThirdPerson 1.0.1 → 1.0.2 — static checklist pass, not installed anywhere (2026-09-04, night)
+
+Desktop `MixThirdPerson\` (667-line standalone, no `[PluginReference]`), reviewed cold from
+source + README + LICENSE only. **Not deployed to AU or the dedicated box by instruction**, so
+every "live oracle" item below is explicitly *unverified*; the original 1.0.1 is kept in the
+session scratchpad for diffing.
+- **What it does, and the part that needs eyes**: sets `PlayerFlags.ThirdPersonViewmode` per
+  mount category with admin-chosen allow/deny, and — to get the client to accept a `camdist`
+  convar — **pulses `PlayerFlags.IsAdmin` on and off around it, with a network update in
+  between** (`PulseAdminForCamera`, default true). Checked the server decompile: the server never
+  reads `ThirdPersonViewmode` (bare enum flag; the *client* decides whether to honour it), so
+  whether a non-admin actually gets third person on the current client build is not decidable
+  from source. **Must be tested with a genuinely non-admin account (Joe) before it ships**; if
+  the flag alone works, `PulseAdminForCamera=false` is the safer default because the pulse
+  broadcasts a momentary admin flag to every client in range. Left as the owner's call, not
+  changed.
+- **Interference check against the pack (Cat 9)**: MixGovern and MixCore also set `IsAdmin` —
+  MixGovern's noclip keeps a player elevated for the whole noclip session and restores a
+  captured `hadAdmin` afterwards. Traced both directions: this plugin's pulse is synchronous
+  (set → send → set → send → `finally` restore in one call stack), so nothing can interleave;
+  and when MixGovern has a player elevated, this plugin sees `IsAdmin` true and doesn't pulse.
+  No command-name collisions: nothing in the 46 owns `/third`, `/mixthird`, `/view`,
+  `/third.admin` or `mixthird.*`.
+- **Cat 7 finding (fixed, real race)**: `wasAdmin` was `player.IsAdmin` alone. A genuine admin
+  whose flag isn't set yet (connect window; or mid-restore by another plugin) would be pulsed,
+  and the `finally` would then set the flag **false** — stripping a real admin. Now
+  `IsAdmin || authLevel >= 2`, the same test MixGovern's `HasRustAdminCheat` uses.
+- **Cat 5 finding (fixed, pack convention)**: registered `mixthirdperson.use` but never granted
+  it — a fresh install works for nobody, the exact "new player has zero access" shape from
+  earlier today; README even told the admin to grant it by hand. Now granted to `default` in
+  `Init()` (idempotent), README updated.
+- **Cat 7 finding (fixed, latent)**: `Rule(cat)` returned a *detached* `new CategoryRule()` for
+  an unknown key; `SetRule` edits that and `SaveConfig()`s, so the edit would vanish. Unreachable
+  today (LoadConfig backfills every category, NormalizeCategory only returns known ones) but one
+  hand-edited config away from real. Now inserts into `_config.Rules`.
+- **Cat 7 finding (fixed)**: `CamDistance` from config went straight to the client convar
+  unclamped — 0 is a black screen, 500 a satellite view. Clamped 0.5–10 on load; negative
+  cooldown floored at 0.
+- **Cat 8 finding (fixed)**: `SaveData()` (called from `OnServerSave` and every toggle) and
+  `SaveConfig()` were unguarded disk writes — a hiccup would surface as a hook exception against
+  the save cycle or the player's command. Wrapped, same shape as MixCommerce.
+- **Cat 1 finding (fixed)**: boot line hard-coded "1.0.1" — same stale-string class as
+  OSAuto-Turrets earlier today; now `{Version}`.
+- **Clean**: Cat 2 (no per-tick hooks; mount/dismount/respawn go through `NextTick` with
+  re-validation; NPC mounts fall out on `!IsConnected`), Cat 4 (`_third`/`_lastToggle` cleared
+  on disconnect, `Unload` restores first-person for everyone it changed), Cat 6 (no CUI), Cat
+  10 (third person for players is permitted; the admin-flag pulse is the only judgement call,
+  flagged above), Cat 11 (`Unload` restores + saves, `OnServerSave` saves, no `OnNewSave` by
+  documented design), Cat 12 (only static is an immutable string array), Carbon hook-cache rule
+  (every method private).
+- **README nit, not changed**: the "delete your 1.0.0 config" note is over-cautious — an old
+  `Policy`-shaped config deserialises with `AllowFirst/AllowThird` defaulting true, i.e. "both",
+  which is exactly the 1.0.1 default. Harmless either way.
+- **Compile finding (fixed, and the reason this plugin would have failed on arrival)**: the
+  `mixthird.rule` console handler indexed `arg.Args[0]` / `arg.Args[1]` as `string`. On the
+  current Rust build `ConsoleSystem.Arg.Args` is `Facepunch.StringView[]`, so that is three
+  hard compile errors — which is exactly why every pack plugin goes through `arg.GetString(i)`
+  or `.ToString()`. Reading the file did not catch it; an offline compile did. Same errors in
+  the untouched 1.0.1, so it was already broken, not introduced here. Now `GetString(0/1)`.
+- **How it was compiled without installing — new tool, keep it**:
+  `E:\Projects\mix-apps\_ilspy-assemblies\binarylane-au-carbon\harness\compile.sh <plugin.cs>`
+  — the .NET 8 SDK's csc against AU's *exact* `RustDedicated_Data/Managed` (pulled tonight,
+  Assembly-CSharp dated 2026-09-04) plus Carbon's managed DLLs. Two things it needed that a
+  naive reference set lacks, both discovered by running a known-good live plugin as a control:
+  (1) a **publicized** Assembly-CSharp — Carbon publicizes in memory at boot, so live plugins
+  legally read private fields (`PlayerBoat.Sails/Engines/Anchors` are private); `harness/
+  publicizer/` is a 40-line Cecil tool that does the same to disk; (2) **`Carbon.Proxy.dll`**
+  in the references — not a loader piece as its name suggests, it carries `RustProxies.*`,
+  static shims for APIs Facepunch has removed (`BaseEntity.SetFlag` is gone in the 09-04 build;
+  MixBoatHelm only compiles because of the proxy). Validated: MixBoatHelm and MixCommerce 0.8.4
+  (both live on AU) compile clean, a removed-API probe compiles, and MixThirdPerson 1.0.1 fails
+  on exactly its three bad lines. Refresh after each Rust/Carbon update. Not loaded: Carbon's
+  CompilerPolyfills source generator (needs Roslyn 4.14+, SDK here is 4.11) — so a plugin that
+  compiles on Carbon *only* through a generated polyfill would still show an error here; treat
+  an unexplained one as "verify on Carbon", not as proof.
+- **Cat 7 rule, new, general**: never index `ConsoleSystem.Arg.Args` as `string` — it's
+  `StringView[]`; use `arg.GetString(i)` / `arg.GetString(i, fallback)`. Cheap to grep for:
+  `Args\[\d+\]` outside a `.ToString()`.
+- **Side finding, dedicated box**: its `Assembly-CSharp.dll` is dated 2026-08-30 vs AU's
+  2026-09-04 — it has not taken the September forced update. The first attempt at this harness
+  used its assemblies and the live control plugin *failed* on members that only exist in the
+  newer build. When that server next starts it must update Rust before any of tonight's
+  plugin mirrors are judged by what it does or doesn't compile.
+- **Not done, by instruction**: no install, no reload, nothing touched on AU or the dedicated
+  box. Version bumped to 1.0.2 so the edited file can't be mistaken for the original.
 - **Not a regression, noted**: only MixCore and MixModsConnectUI re-register when MixImages
   reloads (they wire `OnPluginLoaded("MixImages")`); the other 14 warmers don't, and don't need
   to — their slots persist in `MixImages/registry.json` and Rust's server FileStorage across a
