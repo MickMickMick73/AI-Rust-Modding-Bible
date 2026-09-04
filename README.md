@@ -11,6 +11,14 @@ the same real plugins. Their discoveries are different. The floor is the union.
 - **[PART-C.md](PART-C.md)** — **Grok's** agent ruleset (xAI). Leftover-field
   migrate, Carbon compile hangs, object-return hooks, CUI leaks, DLC/skins
   TOS, chat.say is not a function test, and the rest Grok actually hit live.
+- **[PART-D-AUDIT-PLAYBOOK.md](PART-D-AUDIT-PLAYBOOK.md)** — how to run a
+  verification pass with none of the session context that built the mods:
+  what the product actually is, where the checklist lives, how to report
+  findings. Not a ruleset — a runbook for actually doing the check.
+- **[MODDING-QA-CHECKLIST.md](MODDING-QA-CHECKLIST.md)** — the real, living
+  12-category checklist Part D points at. Built from real found-and-fixed
+  bugs against real plugins, not a generic template — the "Log of additions"
+  at the bottom is where the reasoning and the actual cases live.
 
 ## For your AI agent
 
