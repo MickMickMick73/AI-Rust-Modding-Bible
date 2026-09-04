@@ -3162,11 +3162,15 @@ session scratchpad for diffing.
   `{"bike": "third", "Locked": false}` for his SteamID — a real toggle path wrote it — and the
   Carbon log has **zero** warnings or errors in the 28 minutes since load, no hook
   exceptions in `c.plugins`. So the client honours `ThirdPersonViewmode` without admin.
-- **Still open, deliberately**: whether the `IsAdmin` pulse contributes anything (it exists
-  only to get `camdist` accepted). The logs can't show camera distance. Cheap to settle: set
-  `PulseAdminForCamera=false`, reload, same bike test — if it still looks right, ship with the
-  pulse off and stop broadcasting a momentary admin flag for a cosmetic.
-  Version bumped to 1.0.2 so the edited file can't be mistaken for the original.
+- **Pulse question settled the same night (→ 1.0.3)**: set `PulseAdminForCamera=false` on AU,
+  reloaded (config re-save confirmed the value stuck), same non-admin rode the same bike:
+  *"same, works, toggle works, all working."* Camera distance identical with the pulse off,
+  so it was broadcasting a momentary admin flag to every client in range for nothing.
+  Shipped default flipped to `false` in the source (opt-in kept for a client build where
+  `camdist` matters again), README updated. General rule this reinforces: **when a plugin
+  elevates a player's privilege flag "briefly" for a cosmetic, test whether the cosmetic
+  actually needs it before accepting the elevation** — here the answer was no, and a
+  read-through could never have said so.
 - **Not a regression, noted**: only MixCore and MixModsConnectUI re-register when MixImages
   reloads (they wire `OnPluginLoaded("MixImages")`); the other 14 warmers don't, and don't need
   to — their slots persist in `MixImages/registry.json` and Rust's server FileStorage across a
