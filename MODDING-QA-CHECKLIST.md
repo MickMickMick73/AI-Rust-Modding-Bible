@@ -3346,6 +3346,46 @@ session scratchpad for diffing.
   local RCON. **Rule**: *never make a long-lived process a child of the tool shell; anything
   that should outlive the conversation goes through the Task Scheduler (or a service), and
   you prove it with the parent chain, not by "it seemed fine".*
+## Checklist pass over the menu/backpack round + HUD plate aspect + a dedicated-box crash (2026-09-05, morning)
+
+- **Review of the round's diffs (MixMenuKit 3.0.21, MixWorld 0.7.5→0.7.7, menu config v2/v3,
+  the detached launcher) — clean, one note.** MixMenuKit: both roots destroyed on unload and
+  disconnect (Cat 4), force-close-on-loot touches only the sidebar root, editor paths still
+  draw into the normal root with a cursor, `IsShowing` keeps the bind-info toggles honest per
+  root. The single shared `ShowBindInfo` flag means toggling it on the sidebar also shows it on
+  the next normal menu that has a bind target — cosmetic, pre-existing, left. MixWorld:
+  `/sortinv` mirrors `DoQuicksort`'s gate (feature flag only, no extra permission — Cat 5
+  consistent), `PlayerOpenLoot`'s `onlyOneUser` check is cleared by Rust on loot end incl.
+  disconnect, so a stuck "in use" can't persist. Config v3 BACK → `mixmenukit.close` uses the
+  existing close path incl. sound. Detached launcher proven by parent chain.
+- **HUD (MixHud 4.1.6, both boxes) — the ovals were arithmetic, not art.** Live config was
+  `0.005 0.78 / 0.17 0.995`: width 0.165 of the screen, height 0.215 → 317×232 px at 1080p, a
+  1.37:1 box stretching a 960×480 (2:1) plate. The well code already computes a "square" width
+  from the panel aspect, but with the panel that tall the square width (0.22) exceeded the
+  even-share width (0.155), so wells fell back to 49 px wide × 70 px tall. Fix is a rule, not a
+  number: `LockPlateAspect` (default on) derives `AnchorMin.y` from the width — `h = w·(16/9)/2`
+  — keeping the top edge and width the owner liked; the config re-saved itself as `0.848`. Wells
+  now 47.6×47.5 px; rows are panel fractions so their gaps compress with the height while
+  font sizes (points) stay put — exactly the owner's ask. Second ask: the ☰ well ran MixHud's
+  own legacy quick-command popup; new `MenuButtonChat` (default `/hub`) hands it to the menu
+  system, empty string restores the popup. **Cat 6 rule**: *when art has a fixed aspect,
+  derive one dimension from the other in code; a hand-tuned pair of anchors drifts the first
+  time someone "just widens it a bit".*
+- **Dedicated box crashed natively 10 min after startup — not a plugin (Cat 11/ops).** Stack
+  was pure `UnityPlayer`, timestamp three minutes *before* the MixHud file landed, and the
+  game log's last lines were "Rust+ companion server connectivity test failed … Could not
+  establish a TCP connection to <public ip>:28083" → "Crash!!!". The dev box has no reachable
+  public app port; AU (where Rust+ works) never sees this. Fix: `+app.port -1` in
+  `Launch-MixMods.cmd` — companion server off, the self-test never runs; a harmless managed
+  "registration failed: 400" is all that remains. Verified: rebooted detached, 43/43 compiled,
+  startup complete, still alive at +201 s (it had died at ~+60 s), no crash marker. Only then was
+  MixHud 4.1.6 released to AU. **Also learned the hard way**: `rem` lines placed inside a
+  `^`-continued command in a .cmd become *arguments to the executable* — the first patch of the
+  launcher did that and the server booted with three `rem` tokens on its command line. Comments
+  go above the command; verify the live command line with `Win32_Process.CommandLine`.
+- **Launcher hardening**: the running-check in `Start-Dedicated-Detached.cmd` used `find`,
+  which under a Git-bash-polluted PATH resolves to GNU find and fails; now `findstr`.
+
 - **Owner-confirmed on AU, 2026-09-05**: sidebar survives submenus and Tab closes both;
   SORT INV works from the sidebar; BUILD → BACK leaves the sidebar in place; BUILD → BACKPACK
   opens the loot window. Everything in this menu block is now verified by a human, not just
