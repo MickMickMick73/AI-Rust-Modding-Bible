@@ -355,6 +355,17 @@ to grep/read for, not just the principle, so it's actually repeatable and not de
   preceding line checked for `HookMethod`). Then prove it at runtime with state the dead call
   should have written: MixCore.json's `ModuleVersions` listed only MixCore itself the whole time
   `API_RegisterModule` was dead, and filled in within seconds of the fix.
+- [ ] **Compile the plugin WITHOUT Carbon's compat shims (`NO_PROXY=1 harness/compile.sh`).**
+  Carbon ships `Carbon.Proxy.dll` — static shims (`RustProxies.*`) that keep old code building
+  after Facepunch removes an API, each marked obsolete and removable in any Carbon release, and
+  none of them exist on Oxide. A plugin that only builds with the shim is already broken on a
+  timer nobody controls. Real case 2026-09-04: `BaseEntity.SetFlag` was removed from Rust that
+  month and **14 of 47 pack plugins (78 call sites)** compiled only through the shim — asked
+  about as "what happens to BoatHelm when things change", found to be the whole pack. Fix
+  with the replacement API (`StartSetFlags(mode)` scope → `Set(f, b, recursive)`), or with a
+  per-plugin extension method in `Oxide.Plugins` that shadows the shim (what
+  `harness/add_setflag_compat.py` does — zero call-site churn). Decode what the shim actually
+  does (Cecil IL) before writing the replacement, so behaviour stays identical.
 - [ ] If a plugin is listed/sold as "standalone," verify every `[PluginReference]` is either (a)
   genuinely absent, or (b) truly optional with a working fallback path when the referenced plugin
   isn't loaded — not a dependency for a *core* advertised feature. (MixSignboard's slideshow
@@ -3162,6 +3173,46 @@ session scratchpad for diffing.
   `{"bike": "third", "Locked": false}` for his SteamID — a real toggle path wrote it — and the
   Carbon log has **zero** warnings or errors in the 28 minutes since load, no hook
   exceptions in `c.plugins`. So the client honours `ThirdPersonViewmode` without admin.
+## Dedicated box brought level with AU, then the "BoatHelm will break" question answered — 14 plugins off Carbon's obsolete shim (2026-09-04, late night)
+
+- **Dedicated update**: Rust via the box's own `Update-RustServer.bat` command (SteamCMD
+  258550 validate) → build **25083359**, identical to AU; Carbon 2.0.257 (Aug 6) →
+  **2.0.258** from the CarbonCommunity `production_build` release (owner approved the 21.4 MB
+  download; `carbon/managed` + `native` + doorstop backed up first; zip inspected before
+  extraction — it carries only empty placeholder dirs for plugins/configs/data). Cold boot:
+  **43/43 compiled, 0 failed, 0 hook-lag**, one pre-existing data warning (MixRackKit wants
+  `kits.json` generated). World gen from scratch took ~20 min because the update invalidated
+  the cached map — expected, not a plugin symptom.
+- **The real finding — Cat 9, new item**: Facepunch removed `BaseEntity.SetFlag(f, b,
+  recursive, networkupdate)` in the 2026-09 build. Every call still compiled on AU only through
+  `Carbon.Proxy.dll`'s `RustProxies.SetFlag`, which Carbon has already marked obsolete
+  ("Use BaseEntity.StartSetFlags or BaseEntity.SetFlagLocal instead") — i.e. it can go in any
+  Carbon release, and it never existed on Oxide. The owner asked about BoatHelm; a pack-wide
+  compile **without the shim** (`NO_PROXY=1 compile.sh`) found **14 of 47 plugins, 78 call
+  sites**, all the same one API: FreeBuild, MixApartmentHome, MixBoatHelm, MixHeadlamp,
+  MixInstantBases, MixQuarry, MixRackKit, MixRaidBases, MixShowcase, MixSignboard, MixSiloRaid,
+  MixSkinsLight, MixWorld, OSAutoTurrets.
+- **Fix shape, chosen for zero call-site churn**: `harness/add_setflag_compat.py` drops a
+  small `internal static class <Plugin>FlagCompat` with `SetFlag(this BaseEntity, Flags, bool,
+  bool recursive = false, bool networkupdate = true)` into each plugin's own
+  `namespace Oxide.Plugins`. C# resolves extension methods innermost-namespace-first, so it
+  shadows the global-namespace shim with no ambiguity; the body does exactly what the shim's
+  IL does (`StartSetFlags(networkupdate ? SendNetworkUpdate : Local)` → `scope.Set(f, b,
+  recursive)` → dispose), verified by decoding both `RustProxies.SetFlag` and
+  `FlagsUpdateScope` with Cecil. Handles file-scoped and block namespaces. Proven on scratch
+  copies first, then all 14 (+ the dedicated-only OSAutoTurrets variant) compiled **with and
+  without** the shim. Deployed to AU (all 14 reloaded, 47 scripts, 0 failed, only reload
+  hook-lag warnings) and mirrored to the dedicated box.
+- **Harness gained two things while doing this**: `NO_PROXY=1` mode (the "will it still build
+  when Carbon drops a shim" check — worth running on every new plugin), and
+  `polyfills/IsExternalInit.cs`, compiled alongside every plugin because Carbon's
+  CompilerPolyfills generator (which the harness can't load) emits it for `init` accessors —
+  MixSkinsLight uses them and was a false failure until then. Polyfills are harness-only, never
+  shipped in a plugin file, where they could collide with Carbon's generated copy.
+- **Rule, general**: *a plugin that compiles only because the loader ships a shim for a removed
+  API is already broken, on a timer you don't control.* Compile without the shims; if it fails,
+  fix it now while the replacement API is fresh and the shim still tells you what it did.
+
 - **Pulse question settled the same night (→ 1.0.3)**: set `PulseAdminForCamera=false` on AU,
   reloaded (config re-save confirmed the value stuck), same non-admin rode the same bike:
   *"same, works, toggle works, all working."* Camera distance identical with the pulse off,
