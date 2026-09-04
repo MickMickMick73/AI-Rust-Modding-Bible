@@ -3008,6 +3008,34 @@ the oracle where one existed.
   whoever runs this next: a full AU boot plus poll now exceeds a 10-minute tool timeout — poll
   in a background task or in two calls; and the 41 figure is the true count of assets the pack
   hands over before world-ready, a useful baseline if it ever jumps.
+
+### Checklist pass over MixImages 1.0.2 → 1.0.3 (2026-09-04, night) — 3 findings, all fixed
+
+Reviewed the final file cold, against all 12 categories, after the cold-boot proof above.
+- **Cat 8 (real, introduced by the fix itself)**: batching 41 stores into one `FlushDeferred`
+  loop created a single point where one `FileStorage.Store` throw would abort the loop and
+  silently drop every image after it — and `_deferred` had already been cleared, so nothing
+  would retry them. v1.0.1's one-image-per-timer-callback shape never had that exposure. Now
+  each store in the flush is individually contained, failures are counted and named, and the
+  summary line says "stored 40 of 41 — 1 failed" instead of lying with a clean count. The
+  lesson generalises: **when you batch previously-independent operations, you inherit a new
+  failure mode — one bad item poisoning the batch — that the unbatched code never had.**
+- **Cat 1 (stale comment, same class as the earlier sweep)**: `FlushDeferred`'s snapshot
+  comment claimed `StoreBytes` "may re-defer" during the flush. It can't — `_serverReady` is
+  already true at that point, so a not-yet-ready store goes to the timer-retry path, not back
+  into `_deferred`. The snapshot is still correct, the *reason given* for it was wrong. Fixed
+  the comment rather than leave a future reader trusting a false invariant.
+- **Cat 11 (observability)**: unloading mid-boot with images still parked dropped them
+  silently. Recoverable (callers re-warm on their own hooks) but now logged with the count.
+- **Live oracle**: the cold boot's single hook-lag warning was MixApartmentHome's
+  `OnServerInitialized` (337ms), not MixImages — the 41-image flush stayed under Carbon's
+  100ms threshold, so no need to spread it across frames. 1.0.3 reloaded on AU: compiled
+  clean, 0 failed, **0** warnings since, MixCore re-warmed and ConnectUI re-queued through it.
+  Mirrored to the dedicated box. The three changes are defensive/observability only, so the
+  cold-boot proof recorded for 1.0.2 stands for 1.0.3 without another restart.
+- **Clean elsewhere**: no hot-path work (Cat 2), coalesced registry save unchanged (Cat 3), no
+  per-player or static state (Cat 4/12), no perms/CUI/TOS surface (Cat 5/6/10), the six API
+  methods stay non-public and therefore `Call()`-reachable on Carbon (Cat 9).
 - **Not a regression, noted**: only MixCore and MixModsConnectUI re-register when MixImages
   reloads (they wire `OnPluginLoaded("MixImages")`); the other 14 warmers don't, and don't need
   to — their slots persist in `MixImages/registry.json` and Rust's server FileStorage across a
