@@ -181,6 +181,29 @@ to grep/read for, not just the principle, so it's actually repeatable and not de
   a permission looks unregistered, grep for the literal string across every plugin file first,
   not just the direct-registration-call shape, and verify on a genuine restart before concluding
   it's actually missing.
+- [ ] **A registered permission is not the same as a usable feature — every genuinely baseline
+  player-tier permission (a plugin's "use" permission, not its VIP/admin one) needs a matching
+  `permission.GrantGroupPermission("default", perm, this)` next to its `RegisterPermission` call,
+  or a brand-new player has access to nothing across the entire pack.** `RegisterPermission` only
+  makes Oxide/Carbon aware a permission string exists — it grants it to no one. Real, found live
+  via a genuine first-time-player beta test, not a static review: every plugin in the pack
+  registered its permissions correctly and every single one still blocked a new player from
+  everything (shop, teleports, Salvo, all of it) because nothing had ever granted the "default"
+  group anything. **Do not assume a `PermUse`-shaped name is safe to bulk-grant without reading
+  what it actually does** — `osautoturrets.use` turned out to grant VIP1-tier turret status, and
+  `MixAdminMove`'s `mixmove.use` is a trusted-tier building tool despite not being named `.admin`;
+  a name-only pass would have wrongly handed both to every player. Check each one's actual gate
+  logic (config bypass flags, whether it returns a VIP tier, what authLevel default it sits next
+  to) before deciding it belongs in a bulk default-group grant.
+- [ ] **RCON on this server does not echo any response for `oxide.grant`/`o.grant`-style commands
+  — not even an "unknown command" error for a genuinely invalid one — so a live RCON command
+  cannot be used to confirm whether a permission change landed.** The real, persisted proof is
+  `carbon/data/oxide.groups.data` (binary/protobuf, not JSON — readable via a
+  `[\x20-\x7e]{4,}`-printable-string extraction, not a text editor). That file also doesn't save
+  synchronously on every grant — it only flushes on some autosave/trigger event, and `server.save`
+  reliably forces one. A read of this file taken too soon after a batch of grants can show far
+  fewer entries than actually landed and look like a real failure — force a save and re-check
+  before concluding a grant didn't take.
 
 ## 6. CUI lifecycle safety
 - [ ] Every panel `AddUi`'d has a `DestroyUi` reachable on every real exit path: explicit close,
@@ -227,6 +250,15 @@ to grep/read for, not just the principle, so it's actually repeatable and not de
 ## 7. Defensive bounds / null-safety
 - [ ] Every chat/console command handler checks `args.Length` (or `arg.Args.Length`) before
   indexing into it.
+- [ ] **A global multiplier over `ItemDefinition.stackable` (or any per-item scale) must skip
+  items whose vanilla value is 1** — weapons, tools, armour, deployables, anything with condition
+  or a held entity — regardless of the multiplier or a per-item override. Rust tolerates a
+  stacked non-stackable badly: two rifles in one slot render as a tiny "2" badge and the second
+  is effectively gone. Real case 2026-09-04: MixWorldTune's `ApplyStacks` applied a 5x preset to
+  *every* item, `rifle.ak` went to 5, and the shop's second AK merged into the first — reported
+  as "bought it, never received it, nothing on the ground". Fix is `if (vanilla <= 1) keep 1`,
+  plus a repair pass that splits already-merged non-stackables back out for online players
+  (`item.SplitItem(1)` + `player.GiveItem`) when stack sizes come back down.
 - [ ] Cached `BasePlayer`/entity references used inside a delayed callback (`NextTick`,
   `timer.Once`) are re-validated (`!= null`, `.IsConnected`) at the point of use, not just at the
   point of capture — the player may have disconnected in between.
@@ -276,6 +308,17 @@ to grep/read for, not just the principle, so it's actually repeatable and not de
   Revisit if a future plugin is Carbon-only from the start.
 
 ## 8. Exception containment
+- [ ] **Anything that moves currency or items logs its outcome server-side (`Puts`), not just
+  to the player** — `player.ChatMessage()` never reaches the console or `server.log`, so a
+  "charged but never received" dispute is unverifiable after the fact. The purchase log must
+  carry the balance delta *and where the item actually landed* (`item.parent` → main/belt/wear
+  slot, `item.GetWorldEntity()` → dropped, `!item.IsValid()` → merged into a stack or destroyed).
+  A give helper that returns `true` the moment `ItemManager.Create` succeeds, without looking at
+  what `BasePlayer.GiveItem` did with the item, is the pattern to hunt for — MixCommerce's did
+  exactly that until 2026-09-04. Pair it with an RCON-usable server-side inventory dump
+  (`mixcommerce.inv <steamid>` prints amount/max-stack per slot); the client view lags and lies,
+  and that one command turned a two-hour "the item vanished" hunt into a one-line answer
+  (`rifle.ak x2/5`).
 - [ ] File I/O, cross-plugin `Call()`s, and anything touching external state are wrapped in
   try/catch where a failure shouldn't take down the plugin's other hooks. A single unhandled
   exception in one hook can disable that hook (or worse) for the rest of the session.
@@ -288,6 +331,25 @@ to grep/read for, not just the principle, so it's actually repeatable and not de
   entire gallery panel render, not just that cell.
 
 ## 9. Cross-plugin dependency honesty
+- [ ] **On Carbon, every `public` method that another plugin reaches via `Call("Name", ...)` MUST
+  carry `[HookMethod("Name")]` — without it the call silently returns `null`.** Not a style
+  preference: Carbon's `BaseHookable.BuildHookCache` (read in the decompiled Carbon.Common)
+  indexes *non-public* methods by name, but only indexes a *public* method if it has the
+  attribute. Oxide indexes everything, which is why code ported from Oxide passes every reload
+  and every "did the panel open" test while a whole API surface is dead. No exception, no log
+  line, no warning — `Call()` just hands back null and the caller's `is bool b && b` / null-guard
+  quietly takes the failure path. Found 2026-09-04 as the root cause of a shop bug three layers
+  removed from it (see the log entry for that date): 23 dead cross-plugin calls across 7 plugins,
+  including `API_GetStatusLines` (status HUD lines never rendered), `API_OpenAdmin`,
+  `API_RegisterModule` (6 callers), `API_Get/SetWorldTune`, and OSAutoTurrets'
+  `API_ConfigureRaidTurret`/`API_PowerAndStartTurret` (raid-base turrets never configured via
+  API). **Verification is a scripted scan + a data probe, never a reload**: regex every
+  `Call("X"` site across the pack, resolve each `X` to its definition, flag `public` + no
+  attribute (the one-screen Python that did this is trivial to rewrite — collect names from
+  `\bCall(?:<[^>]+>)?\(\s*"(\w+)"`, then match `^(\s*)public\s+[^=;(]*\bNAME\s*\(` with the
+  preceding line checked for `HookMethod`). Then prove it at runtime with state the dead call
+  should have written: MixCore.json's `ModuleVersions` listed only MixCore itself the whole time
+  `API_RegisterModule` was dead, and filled in within seconds of the fix.
 - [ ] If a plugin is listed/sold as "standalone," verify every `[PluginReference]` is either (a)
   genuinely absent, or (b) truly optional with a working fallback path when the referenced plugin
   isn't loaded — not a dependency for a *core* advertised feature. (MixSignboard's slideshow
@@ -2748,3 +2810,101 @@ Not a regression in either plugin, just contention from the sync itself.
   class of thing, just in standalone mods rather than core, and out of scope for today's "unify the
   6 core files" ask. Worth the same treatment eventually, flagged rather than assumed. Full pack
   health after this pass: 46/46 loaded, 0 failed.
+- 2026-09-04 (new category — real, found via a live beta tester, not a static review): **A brand
+  new player has zero access to anything by default — every single player-facing feature across
+  the whole pack requires a permission that is registered but never actually granted to anyone.**
+  Found via the owner's son (Joe) beta-testing as a genuine first-time player: no shop, no /outpost
+  or /bandit teleport, no Salvo. Traced precisely: `MixGovern`'s `ManagedPerms` and every
+  standalone's own `PermUse` constant are correctly `RegisterPermission`'d (Oxide/Carbon knows the
+  permission exists) but nothing ever calls `GrantGroupPermission("default", ...)` — even Salvo's
+  own boot log admits it: *"assign ranks in /salvo admin · or grant salvo.use ... manually"*.
+  `MixMenuKit`'s own `CanUse` gate was checked and ruled out as the cause first — every real
+  player-facing menu is `Public: true` in the live config, so the menu system itself was never the
+  blocker, only the individual feature commands underneath it.
+  **Fix**: added `permission.GrantGroupPermission("default", PermUse, this)` right after each
+  plugin's own `RegisterPermission` call, in the plugin's `Init()` (runs every load — idempotent,
+  self-healing, survives a fresh install or a permission wipe with zero admin action needed) — 20
+  plugins fixed this way, plus a new `PlayerBaselinePerms` array + grant loop added to `MixGovern`
+  for the shared `mixpack.*` namespace (`mixpack.use`, `mixpack.shop.use`, `mixpack.shop.transfer`,
+  `mixpack.kits.use`, `mixpack.teleport.use`, `mixpack.report.use`).
+  **Deliberately excluded, checked case-by-case rather than assumed from naming** — a `PermUse`
+  name doesn't reliably mean "baseline player tier":
+  - `osautoturrets.use` — read the actual code: this permission returns VIP1-equivalent turret
+    status (`return "vip1";`), not baseline access. A naming-only judgment would have wrongly
+    handed every new player a premium feature for free.
+  - `mixmove.use` (`MixAdminMove`) — the plugin's own boot log ("`/move` drop · foundations ·
+    look+LMB grab/place") and default authLevel≥1 gate make clear this is a trusted/staff building
+    tool, not a player feature, despite having a non-admin permission tier.
+  - `mixapartmenthome.move` — no config bypass (unlike its sibling `.use`, which has one), always
+    admin-or-explicit-grant — a more restricted action within the apartment system, left alone.
+  - Every `*.admin` permission, and every genuine VIP/earned tier (`salvo.vip1/2`,
+    `mixpack.teleport.vip`, `mixpack.kits.builder/hazmat/spawn`, `mixpack.rules.bypass`,
+    `mixpack.world.backpack.4/7`) — auto-granting these to everyone would defeat their purpose as a
+    progression/monetization mechanic, not fix a bug.
+  - `mixplaytest.use` — AU-only diagnostic tooling, not a real customer-facing feature.
+  **Verification note, worth keeping**: RCON on this server does not echo any response for
+  `oxide.grant`/`o.grant`-style commands — not even an "unknown command" error — so a live RCON
+  command cannot be used to confirm a permission change here. The actual persisted proof is
+  `carbon/data/oxide.groups.data` (binary/protobuf, not JSON — readable via a simple `[\x20-\x7e]{4,}`
+  printable-string extraction). That file also does **not** save synchronously on every grant —
+  it only updates on some autosave/trigger event; `server.save` reliably forces one. Checked once
+  right after the batch of reloads and only 8 of 26 grants had persisted, which looked like a real
+  problem until `server.save` + a re-check showed all 26 correctly present — don't conclude "grant
+  failed" from an unforced read of this file being incomplete.
+  Deployed to AU and dedicated, all 21 touched plugins reloaded individually, confirmed via
+  `c.plugins`: 46/46 loaded, 0 failed. Final confirmation was reading the actual saved permission
+  data on disk, not just the source code or a clean reload — the same discipline as the
+  `CorePackPlugins` fix earlier today, and for the same reason: a clean-looking reload here still
+  wasn't sufficient proof by itself.
+
+## "Bought an assault rifle, never received it" — three real bugs, none of them in the shop (2026-09-04)
+
+- **2026-09-04 — the report**: owner buys an AK from the shop (the 120-RP `rp_ak` listing), gets
+  the green "Purchased" message, is charged, and the rifle is neither in the inventory (8 free
+  slots) nor on the ground. First buy of a session works; the second doesn't. Six hypotheses were
+  tested and killed with live evidence before the real cause surfaced — click not reaching the
+  server (UI-debug proved it did), wrong listing (true, explained why *scrap* never moved, but not
+  the missing item), full inventory, server lag (FPS 141–154), a cooldown in the buy path (there is
+  none), an interfering `CanAcceptItem`/`OnItemAddedToContainer` hook (checked all 46 plugins).
+  Reading Rust's own `BasePlayer.GiveItem` in the decompiled assembly showed a failed give *always*
+  drops at the player's feet — so "gone from both" should be impossible, which meant the client
+  view was wrong, not the server.
+- **What actually broke it**: a server-side inventory dump (new `mixcommerce.inv <steamid>`,
+  RCON-usable) showed `belt[0]: rifle.ak x2/5`. The second rifle had *merged into the first
+  slot* — `rifle.ak`'s stack limit was 5, vanilla is 1. Every item on the server was at exactly
+  5x vanilla (wood 5000, rifle ammo 640, torch 5, armour 5) while MixCore.json's saved
+  `WorldTune.Stacks.DefaultMultiplier` said 1.0 and Carbon's own StackManager module was disabled.
+- **Bug 1 (root cause, systemic — new Cat 9 item)**: MixCore's `API_SetWorldTune` and
+  `API_GetWorldTune` were `public` methods with no `[HookMethod]`, which on Carbon means
+  `MixCore.Call("API_SetWorldTune", ...)` returns null without a sound. So when an admin applied
+  the 5x preset in the Tune panel today, the multiplier took effect in MixWorldTune's memory and
+  on every `ItemDefinition`, the "save" to MixCore silently did nothing, and the config kept
+  reporting 1.0x — a reload would have quietly undone the whole thing and hidden the evidence.
+  Scanned the pack: **23 dead cross-plugin calls across 7 plugins**, all the same shape.
+  Fixed by adding the attribute to every one (MixCore 0.9.30, MixCommerce 0.8.4, MixGovern 0.9.11,
+  MixWorld 0.7.4, MixWorldTune 0.6.4, MixInstantBases 0.11.2, OSAuto-Turrets 1.7.1). Proven at
+  runtime, not by reload: `ModuleVersions` in MixCore.json went from `{MixCore}` alone to listing
+  the registering pack plugins within seconds of MixCore 0.9.30 loading.
+- **Bug 2 (gameplay — new Cat 7 item)**: MixWorldTune's `ApplyStacks` multiplied *every* item,
+  including everything with a vanilla stack of 1. Now skips those unconditionally (override or
+  not, with a warning if an override targets one), and a repair pass splits already-merged
+  non-stackables back into separate slots for online players — on deploy it logged
+  "un-stacked 2 weapon/tool/armour item(s)" and the owner's belt went from `rifle.ak x2` to two
+  `rifle.ak x1` slots. `SaveTuneToCore` now checks MixCore's answer and warns if the settings
+  weren't accepted, instead of the old fire-and-forget.
+- **Bug 3 (observability — new Cat 8 item)**: MixCommerce's `GiveItem` returned `true` once
+  `ItemManager.Create` succeeded and never looked at where the item went; purchase results only
+  ever went to `player.ChatMessage`, which doesn't reach `server.log`, so nothing about a
+  disputed purchase was verifiable after the fact. Replaced on the buy path with
+  `GiveItemVerified` (reports main/belt/wear slot, dropped-in-world, stacked-into-existing, or
+  removed — and refunds only on a genuine loss) plus a `[Shop]` audit line per buy/sell with the
+  balance delta and free-slot count. Stack-merge is explicitly treated as success by comparing
+  held count before/after, so buying 100 wood into an existing wood stack doesn't get refunded.
+- **Side note for the owner**: MixCore's playtime points accrue ~+1 RP/min while online, which
+  is why "my balance went up after buying" was true and not a sign the purchase failed — don't
+  diff balances across minutes without accounting for it. Also noticed and left alone for now:
+  OSAuto-Turrets' boot line still prints a hard-coded "v1.6.9 (Oxide)" — stale string, same class
+  as the Cat 1 stale-comment sweep, cosmetic.
+- **Not touched**: `_rogue-depot-packaging/submission-ready/` (standing rule), and the older
+  `live-source/` project copies — AU and the dedicated box are the source of truth for these
+  seven files as they have been all session.
