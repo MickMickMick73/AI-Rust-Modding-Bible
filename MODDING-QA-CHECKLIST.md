@@ -3146,8 +3146,17 @@ session scratchpad for diffing.
   used its assemblies and the live control plugin *failed* on members that only exist in the
   newer build. When that server next starts it must update Rust before any of tonight's
   plugin mirrors are judged by what it does or doesn't compile.
-- **Not done, by instruction**: no install, no reload, nothing touched on AU or the dedicated
-  box. Version bumped to 1.0.2 so the edited file can't be mistaken for the original.
+- **Then uploaded to AU on the owner's say-so (22:17) for Joe to test as a non-admin.** Compiled
+  and loaded clean: 47 scripts, 0 failed, config generated with the intended defaults, `use`
+  granted to `default` (confirmed in `oxide.groups.data` after a forced `server.save`).
+  **Deploy quirk worth remembering**: Carbon's file watcher did *not* pick up the file — every
+  earlier deploy tonight overwrote an existing rustserver-owned `.cs`; this was a *new* file
+  created root-owned by scp, and two minutes later there was no compile attempt at all. Fix was
+  `chown rustserver:rustserver` + RCON `c.load MixThirdPerson` — loaded in 210ms. New plugins
+  onto this box: chown first, then `c.load`; don't wait on the watcher.
+- **Still open, live test only**: whether a non-admin client honours `ThirdPersonViewmode`
+  (and whether the admin pulse is needed for `camdist`) — that is what Joe's session decides.
+  Version bumped to 1.0.2 so the edited file can't be mistaken for the original.
 - **Not a regression, noted**: only MixCore and MixModsConnectUI re-register when MixImages
   reloads (they wire `OnPluginLoaded("MixImages")`); the other 14 warmers don't, and don't need
   to — their slots persist in `MixImages/registry.json` and Rust's server FileStorage across a
