@@ -3346,7 +3346,11 @@ session scratchpad for diffing.
   local RCON. **Rule**: *never make a long-lived process a child of the tool shell; anything
   that should outlive the conversation goes through the Task Scheduler (or a service), and
   you prove it with the parent chain, not by "it seemed fine".*
-- **Untested until someone presses Tab**: plate → submenu → BACK round-trips, and the Tab
+- **Owner-confirmed on AU, 2026-09-05**: sidebar survives submenus and Tab closes both;
+  SORT INV works from the sidebar; BUILD → BACK leaves the sidebar in place; BUILD → BACKPACK
+  opens the loot window. Everything in this menu block is now verified by a human, not just
+  by config read-backs.
+- **Untested until someone presses Tab** (historical — see the confirmation above): plate → submenu → BACK round-trips, and the Tab
   bind (unchanged trigger `/i`, so existing binds keep working). Backups: both boxes,
   timestamped `backups/menu-rework-*` with AU's full `data/MixMenuKit` alongside.
 
