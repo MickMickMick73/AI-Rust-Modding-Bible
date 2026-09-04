@@ -3319,6 +3319,21 @@ session scratchpad for diffing.
   slots by default, 4 or 7 rows via `mixpack.world.backpack.4/.7` — so "extra slots" means a
   stash-style loot window plus a "Backpack: N row(s)" chat line, not slots added to the
   inventory grid.
+- **Backpack never opened — a wrong-typed RPC, live since the feature shipped (MixWorld 0.7.7,
+  both boxes)**. Owner's report was precise enough to bisect on: "chat line appeared, no loot
+  panel". The chat line prints *after* the open call, so the server side ran; the client drew
+  nothing. Decompile: `RPC_OpenLootPanel` takes a **panel-name string** (`"generic"`,
+  `"player_corpse"`, `"generic_resizable"`); MixWorld sent `container.net.ID` — the client got
+  a nonsense name. And `StartLootingEntity()` on its own never adds the container to the loot
+  session; Rust's `StorageContainer.PlayerOpenLoot` is the whole sequence (flags → AddContainers →
+  SendImmediate → RPC with `panelName`). Switched to it, and set `panelName =
+  "generic_resizable"` on the stash so a 4- or 7-row backpack renders every slot (the stash's own
+  panel draws six). Checked `CanBeLooted` (only rejects transferring — the `Disabled` flag on the
+  hidden stash is fine) and that `generic_resizable` exists in this build (workbench recycle bin
+  uses it). **Cat 7 rule, general**: *a `ClientRPC` argument is an untyped payload — the
+  compiler cannot tell you it's the wrong kind. Read the client handler's signature in the
+  decompile before hand-rolling any RPC, and prefer the entity's own open/close method to
+  re-implementing the sequence.* Compiled both ways, dedicated then AU.
 - **Untested until someone presses Tab**: plate → submenu → BACK round-trips, and the Tab
   bind (unchanged trigger `/i`, so existing binds keep working). Backups: both boxes,
   timestamped `backups/menu-rework-*` with AU's full `data/MixMenuKit` alongside.
