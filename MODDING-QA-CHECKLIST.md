@@ -3270,6 +3270,23 @@ session scratchpad for diffing.
   **unload → write → load**, verified by reading the file after each step (old after unload,
   new after write, new after load). Rule: *for any plugin that saves config on Unload, a
   "reload to pick up my edit" is a no-op that looks like success* — read the file back.
+- **Owner's in-game test found the real bug (fixed, MixMenuKit 3.0.21, both boxes)**: open a
+  submenu from the Tab sidebar, close it, and the sidebar was gone too — then the next Tab
+  toggled the sidebar back ON with the inventory closing, leaving a cursor-locked panel on the
+  main screen until the player typed `/i`. MixCore's hub button did *not* do this, which was the
+  tell: MixHub draws in its own UI root, MixMenuKit drew every menu into one root, so a submenu
+  destroyed the sidebar to draw itself and `CClose` destroyed the root outright. Fix, Cat 6:
+  the Inventory Menu gets its own root (`MixMenuKit.InvRoot`) and its own open-state
+  (`InvOpen`/`InvMenuId`), so normal menus stack over it and closing them leaves it in place;
+  trigger toggle, force-close-on-loot, `/mixmenu close`, disconnect and unload all handle both
+  roots. Second half: the sidebar no longer sets `CursorEnabled` — the inventory screen already
+  supplies the cursor, so a sidebar that outlives the inventory (ESC, loot echo, any desync) is
+  now inert instead of trapping the mouse. Rust still offers no server-side "own inventory is
+  open" signal, so perfect sync stays impossible; this removes the *cost* of a desync instead.
+  Scripted patch with per-hunk match assertions (14 draw calls re-parented), compiled both ways,
+  dedicated first (hot reload, config intact at 13 menus), then AU (11 menus, 47 scripts, 0
+  failed). **Rule**: *a panel meant to live inside another UI must not bring its own cursor
+  lock, and a family of UIs that should coexist must not share one root.*
 - **Untested until someone presses Tab**: plate → submenu → BACK round-trips, and the Tab
   bind (unchanged trigger `/i`, so existing binds keep working). Backups: both boxes,
   timestamped `backups/menu-rework-*` with AU's full `data/MixMenuKit` alongside.
