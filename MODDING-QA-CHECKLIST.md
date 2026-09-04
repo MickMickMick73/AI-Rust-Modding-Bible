@@ -3036,6 +3036,27 @@ Reviewed the final file cold, against all 12 categories, after the cold-boot pro
 - **Clean elsewhere**: no hot-path work (Cat 2), coalesced registry save unchanged (Cat 3), no
   per-player or static state (Cat 4/12), no perms/CUI/TOS surface (Cat 5/6/10), the six API
   methods stay non-public and therefore `Call()`-reachable on Carbon (Cat 9).
+
+### Checklist pass over MixImages 1.0.3 → 1.0.4 (2026-09-04, night) — 1 finding, fixed; loop closed
+
+- **Cat 8 (real, a consequence of the previous fix's shape)**: the try/catch added in 1.0.3
+  wrapped only the *flush loop's* calls. `FileStorage.Store` is reached from three other places
+  — a caller's own hook (`AddImageData` during a plugin's warm-up), the 1s timer retry, and the
+  download coroutine — and on those paths a throw would propagate out as a hook exception
+  **attributed to the calling plugin** (MixHud, Salvo, …) or to an anonymous timer callback.
+  Whoever read the log would open the wrong file. Moved the containment *into* `StoreBytes`,
+  which now returns `bool` (false only for oversize or a FileStorage throw; parked-for-later and
+  retry-scheduled are both true), and the flush loop just counts. One guard, every path, and the
+  failure is named as MixImages' own. Rule worth keeping: **contain at the sink, not at one of
+  its callers** — when a shared method can throw and has several entry points, the try/catch
+  belongs inside it, otherwise the exception is reported against whichever caller you forgot.
+- **Live**: 1.0.4 reloaded on AU — compiled clean, 0 failed, 0 warnings since, MixCore
+  re-warmed and ConnectUI re-queued. Mirrored to the dedicated box. Defensive-only change; the
+  1.0.2 cold-boot proof still stands.
+- **Stopping here**: three consecutive passes on one 200-line file went real bug → real
+  consequence of that fix → consistency of *that* fix. The third pass found nothing beyond that
+  one point, which is the signal the loop has converged — further passes on this file would be
+  ceremony, not review.
 - **Not a regression, noted**: only MixCore and MixModsConnectUI re-register when MixImages
   reloads (they wire `OnPluginLoaded("MixImages")`); the other 14 warmers don't, and don't need
   to — their slots persist in `MixImages/registry.json` and Rust's server FileStorage across a
