@@ -2943,3 +2943,35 @@ the oracle where one existed.
   CUI (Cat 6), `mixcommerce.inv` gates in-game callers on commerce admin and lets RCON through
   (Cat 5), every new `Call()`/console path already sits inside the existing try/catch shape
   (Cat 8), no skin/TOS surface (Cat 10).
+
+### 5x preset re-applied and proven persistent; `mixtune.preset` added; checklist pass (2026-09-04, late)
+
+- **Why a new command**: nothing in MixWorldTune was reachable from RCON — `/mixtune` and every
+  `mixtune.ui`/`mixtune.action` route bail on `arg.Player() == null`. Added `mixtune.preset
+  <1|2|5|10>` (RCON, or in-game with `HasAdmin`), calling the same `ApplyPreset` →
+  `SaveTuneToCore` path as the panel button and then **reading the value back from MixCore**
+  via `API_GetWorldTune` rather than echoing its own field — so the reply is proof, not a claim.
+- **Persistence proven the right way**: applied 5x over RCON → MixCore.json written seconds
+  later with Stacks/Cook/Craft/Gather/Loot 5.0, ActivePreset 5.0 → `c.reload MixWorldTune` →
+  config still 5.0 and the plugin reported "active 5x · stacks 5x" from MixCore's saved state →
+  owner confirmed the Tune panel shows **Global 5x** → owner bought a fifth AK with 5x live and
+  the audit line read `item → main[10] x1 · now holding 5`, not `stacked`. Wood `/5000`, ammo
+  `/640`, `rifle.ak /1`. Every link in that chain was previously either silently broken or
+  unobservable.
+- **Cat 7 finding (fixed, 0.6.7)**: `float.TryParse` accepts `"NaN"` and `"Infinity"`, and
+  `Mathf.Clamp(NaN, 1, 10)` returns NaN — which would have gone into `_tune`, through
+  `ApplyStacks` (every stack silently to 1) and into MixCore.json as a literal `NaN`. Guarded
+  in the new command **and** in the pre-existing `/mixtune stacks <n>` chat path, which had the
+  same hole. Verified live: `mixtune.preset NaN` and `mixtune.preset abc` both return usage and
+  leave the config at 5.0.
+- **Cat 8 finding (fixed)**: the read-back `JsonConvert` round-trip of MixCore's object was
+  unguarded — a shape mismatch would have thrown out of a console handler. Wrapped; reply says
+  "unreadable (…)" instead.
+- **Cat 6 finding (fixed)**: an in-game caller's open Tune panel wasn't refreshed after the
+  console path applied a preset (the panel's own action route does `RefreshTuneHub`). Added for
+  `player != null`; RCON callers have no panel.
+- **Cat 11**: registered via `[ConsoleCommand]` only, matching this file's deliberate
+  attribute-only convention (see the 2026-09-02 note above about the removed double
+  registration) — not added to `Init()`.
+- **Live oracle**: `c.plugins` — 46 scripts, 0 failed, 0 hook exceptions; deployed to AU and
+  mirrored to the dedicated box (still offline, compile unverified there).
