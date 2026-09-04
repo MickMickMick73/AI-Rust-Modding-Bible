@@ -2996,11 +2996,18 @@ the oracle where one existed.
   a mid-session reload never holds anything back waiting on hook ordering. Registry saves are
   coalesced to one write per burst (a 17-asset warm was 17 disk writes — Cat 3), with the
   pending save flushed in `Unload()` (Cat 11) and its timer destroyed (Cat 4/12).
-- **Verified so far (mid-session reload)**: compiled clean, 0 failed; MixCore re-warmed and
-  MixModsConnectUI re-queued through the new code with **zero** warnings since the reload;
-  registry intact at 228 slots including all 20 MixHud icons. The cold-boot path — the actual
-  fix — can only be proven by the next restart; recorded here as *unverified until then* rather
-  than assumed.
+- **Verified, mid-session reload first**: compiled clean, 0 failed; MixCore re-warmed and
+  MixModsConnectUI re-queued through the new code with zero warnings; registry intact at 228
+  slots including all 20 MixHud icons.
+- **Verified, then the cold boot that actually matters** (second `systemctl restart` of the
+  night, 21:35): MixImages loaded at 21:37:29, the world reported ready at 21:41:04 — a **3½
+  minute** gap, seven times the old retry budget — and the flush fired: *"stored 41 image(s)
+  that arrived before the world was ready."* **Zero** "gave up storing" lines (14 on the boot
+  two hours earlier, 123–246/day in the archives). The whole boot log carries exactly one
+  `[WARN]`, Carbon's own analytics notice. 46/46 loaded, 0 failed, 184 FPS. Two notes for
+  whoever runs this next: a full AU boot plus poll now exceeds a 10-minute tool timeout — poll
+  in a background task or in two calls; and the 41 figure is the true count of assets the pack
+  hands over before world-ready, a useful baseline if it ever jumps.
 - **Not a regression, noted**: only MixCore and MixModsConnectUI re-register when MixImages
   reloads (they wire `OnPluginLoaded("MixImages")`); the other 14 warmers don't, and don't need
   to — their slots persist in `MixImages/registry.json` and Rust's server FileStorage across a
