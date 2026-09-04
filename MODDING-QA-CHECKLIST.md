@@ -3304,6 +3304,21 @@ session scratchpad for diffing.
   write → load, file read back after each step. Dedicated first, then AU; 0 failed on both.
   **Cat 6 rule**: *a UI element that belongs to a menu system should be a plate in it, not a
   free-floating overlay — and anything drawn on "Hud" renders under the inventory screen.*
+- **Third round — a regression my own sidebar fix created (menu config v3, both boxes)**: every
+  submenu's `← BACK` plate ran `/i`, which is the sidebar's *toggle*. Under 3.0.20 the submenu
+  had already destroyed the sidebar, so `/i` re-opened it and BACK looked right; under 3.0.21 the
+  sidebar survives beneath the submenu, so the same `/i` now closed it — BACK killed both. The
+  plate wanted "close this submenu", not "toggle the sidebar": rewired all six to the console
+  command `mixmenukit.close` (closes the normal root only; plates without a leading slash are
+  sent as console commands). `← ADMIN → /admin` plates are fine — opening a different normal
+  menu replaces the current one, no toggle involved. **Cat 6 rule**: *when a fix changes what
+  stays open, re-read every plate/command that was written against the old lifetime — a toggle
+  that "returned" you somewhere only because that thing had been destroyed is a latent
+  inversion.* Also documented for the owner: `/backpack` opens a hidden small-stash entity
+  (spawned 50 m underground, `Disabled` flag, `enableSaving=false`) as a loot panel — 1 row of 6
+  slots by default, 4 or 7 rows via `mixpack.world.backpack.4/.7` — so "extra slots" means a
+  stash-style loot window plus a "Backpack: N row(s)" chat line, not slots added to the
+  inventory grid.
 - **Untested until someone presses Tab**: plate → submenu → BACK round-trips, and the Tab
   bind (unchanged trigger `/i`, so existing binds keep working). Backups: both boxes,
   timestamped `backups/menu-rework-*` with AU's full `data/MixMenuKit` alongside.
