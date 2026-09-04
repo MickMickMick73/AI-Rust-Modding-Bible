@@ -2908,3 +2908,38 @@ Not a regression in either plugin, just contention from the sync itself.
 - **Not touched**: `_rogue-depot-packaging/submission-ready/` (standing rule), and the older
   `live-source/` project copies — AU and the dedicated box are the source of truth for these
   seven files as they have been all session.
+
+### Checklist pass over that round (2026-09-04, evening) — 2 minor findings, both fixed
+
+Scope: the seven plugins above, reviewed against all 12 categories with the live server as
+the oracle where one existed.
+- **Cat 9, scripted re-scan of the deployed sources**: 101 cross-plugin `Call()` targets
+  resolve, **0 broken** (was 23). The 60-odd `UNDEFINED` names are MixPlaytest probing optional
+  third-party plugins (Clans/Friends/etc.) that aren't installed — expected, not findings.
+- **Live oracle**: `c.plugins` on AU — 46 scripts, 0 failed, 0 hook exceptions on any of the
+  seven. MixGovern shows one hook-lag tick; the log says that's `OnServerInitialized` at 1061ms
+  on reload (catalog build) — pre-existing, not from this round. The shop's own audit line
+  after the fix read `item → main[3] x1 · now holding 3` / `main[9] x1 · now holding 4` for two
+  consecutive rifle buys with a full belt — the exact case that used to merge.
+- **Cat 7 finding (fixed, MixWorldTune 0.6.5)**: the over-stack repair pass covered main + belt
+  but skipped `containerWear`; a doubled-up armour piece in a clothing slot is the same breakage.
+  Added wear — safe because `GiveItem()` routes the split copy to main/belt, never back into
+  wear, so it can't loop. Also confirmed against the decompile that `Item.SplitItem(n)` returns
+  null when `n >= amount` and decrements `amount` otherwise, so the `while (amount > 1)` loop
+  always terminates; the split copy is a fresh full-condition item (condition isn't copied).
+- **Cat 1 finding (fixed, OSAuto-Turrets 1.7.2)**: boot line hard-coded "v1.6.9 (Oxide)" while
+  `[Info]` said 1.7.1 — now prints `{Version}`. Same stale-string class as the earlier sweep; the
+  AU and dedicated copies of this plugin differ (dedicated carries a legacy-tier migration block
+  the AU one doesn't), so each got its own two-line patch rather than one overwriting the other.
+- **Cat 11**: MixWorldTune's `ApplyStacks` → repair runs from `OnServerInitialized` and
+  `OnPluginLoaded(MixCore)`; at boot `activePlayerList` is empty so the repair is a no-op there,
+  and on the mid-session reload it correctly found nothing left to split (the first deploy had
+  already done it). The `SaveTuneToCore` "did not accept" warning did not fire after the MixCore
+  attribute fix — that path is now silent for the right reason.
+- **Dedicated box**: not running (last Carbon log 2026-09-03), so its compile of these files is
+  unverified until it next starts; the AU copies of the identical sources compiled, and the
+  dedicated-only OSAuto-Turrets variant differs by attribute lines + one string only.
+- **Nothing else found**: no new statics (Cat 12), no per-player state added (Cat 4), no new
+  CUI (Cat 6), `mixcommerce.inv` gates in-game callers on commerce admin and lets RCON through
+  (Cat 5), every new `Call()`/console path already sits inside the existing try/catch shape
+  (Cat 8), no skin/TOS surface (Cat 10).
