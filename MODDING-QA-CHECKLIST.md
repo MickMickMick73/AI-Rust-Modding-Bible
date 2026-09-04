@@ -3383,6 +3383,16 @@ session scratchpad for diffing.
   `^`-continued command in a .cmd become *arguments to the executable* — the first patch of the
   launcher did that and the server booted with three `rem` tokens on its command line. Comments
   go above the command; verify the live command line with `Win32_Process.CommandLine`.
+- **Owner test of 4.1.6: wells round, ☰ → hub works, but the SCRAP/RP row vanished (fixed,
+  4.1.7 both boxes).** The tell was which row: the 12 pt one, while the 9/10/11 pt rows stayed.
+  Rows are panel fractions, the panel just got 32% shorter, and Unity's Text component
+  *truncates* — hides the whole line — when a rectangle is shorter than the font's line
+  height; the 12 pt row landed a hair under its 19 px box. Fix is not to re-space anything:
+  `VerticalOverflow = VerticalWrapMode.Overflow` on both label helpers (Carbon's
+  `CuiTextComponent` exposes it), so text renders regardless of row height and the compressed
+  spacing the owner asked for stays. **Cat 6 rule**: *fixed-point fonts inside proportional
+  rows will silently disappear the day the container shrinks — set vertical overflow on any
+  label whose row height isn't derived from its font size.*
 - **Launcher hardening**: the running-check in `Start-Dedicated-Detached.cmd` used `find`,
   which under a Git-bash-polluted PATH resolves to GNU find and fails; now `findstr`.
 
