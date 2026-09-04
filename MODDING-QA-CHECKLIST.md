@@ -3334,6 +3334,18 @@ session scratchpad for diffing.
   compiler cannot tell you it's the wrong kind. Read the client handler's signature in the
   decompile before hand-rolling any RPC, and prefer the entity's own open/close method to
   re-implementing the sequence.* Compiled both ways, dedicated then AU.
+- **Ops finding, not a plugin one — the agent window kept locking/dying while the dedicated
+  box ran (fixed 2026-09-05)**: I had been starting `RustDedicated.exe` with `Start-Process`
+  from the session's own shell, which makes a 6 GB game server a grandchild of the agent app
+  (`powershell ← claude.exe ← claude.exe`). The app treats the session as "in use" while any
+  descendant lives, so the window closed, refused to reopen until the server was stopped, and
+  once the PC needed a reboot. Fix: `C:\RustServer\Start-Dedicated-Detached.cmd` runs an
+  on-demand scheduled task (`MixModsDedicated` → `Launch-MixMods.cmd`), so the server's
+  ancestry is `RustDedicated ← cmd ← svchost (Schedule) ← services` — verified with a parent
+  walk, no `claude.exe` in the chain; `Stop-Dedicated.ps1` does `server.save` + `quit` over
+  local RCON. **Rule**: *never make a long-lived process a child of the tool shell; anything
+  that should outlive the conversation goes through the Task Scheduler (or a service), and
+  you prove it with the parent chain, not by "it seemed fine".*
 - **Untested until someone presses Tab**: plate → submenu → BACK round-trips, and the Tab
   bind (unchanged trigger `/i`, so existing binds keep working). Backups: both boxes,
   timestamped `backups/menu-rework-*` with AU's full `data/MixMenuKit` alongside.
