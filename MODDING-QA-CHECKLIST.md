@@ -3287,6 +3287,23 @@ session scratchpad for diffing.
   dedicated first (hot reload, config intact at 13 menus), then AU (11 menus, 47 scripts, 0
   failed). **Rule**: *a panel meant to live inside another UI must not bring its own cursor
   lock, and a family of UIs that should coexist must not share one root.*
+- **Second in-game round: SORT INV (MixWorld 0.7.6 + menu config v2, both boxes)**. Owner
+  reported BUILD → BACKPACK "closes both menus", and a small pop-up button near the hotbar that
+  turned out to be the quick-sort. Traced: `/backpack` opens a real loot session
+  (`StartLootingEntity` + `RPC_OpenLootPanel`) and MixMenuKit force-closes the sidebar on any
+  loot by design (the sidebar would sit over the box contents) — expected, not a bug, documented
+  for the owner; the pop-up is MixWorld's loot-panel "Sort Inv" button drawn on the *Hud* layer,
+  i.e. underneath the inventory screen, which is why it looked blurred yet still clicked. The
+  sort routine itself never needed the box — the box was only a gate for the pop-up. Fix:
+  `/sortinv` (+ `mixworld.sortinv`) sorts the main inventory directly; new config
+  `Features.QuicksortLootButton` (default true for standalone users) hides the pop-up, set
+  false here. Sidebar plate FIX UI → SORT INV, FIX UI moved into WORLD (now 10/12). Patched
+  against the *current* 0.7.5 source (post-SetFlag), not the older pull — worth saying, because
+  the older copy was still lying around. Config changes used the right procedure per plugin:
+  MixWorld saves only on load/admin action → plain reload; MixMenuKit saves on Unload → unload →
+  write → load, file read back after each step. Dedicated first, then AU; 0 failed on both.
+  **Cat 6 rule**: *a UI element that belongs to a menu system should be a plate in it, not a
+  free-floating overlay — and anything drawn on "Hud" renders under the inventory screen.*
 - **Untested until someone presses Tab**: plate → submenu → BACK round-trips, and the Tab
   bind (unchanged trigger `/i`, so existing binds keep working). Backups: both boxes,
   timestamped `backups/menu-rework-*` with AU's full `data/MixMenuKit` alongside.
