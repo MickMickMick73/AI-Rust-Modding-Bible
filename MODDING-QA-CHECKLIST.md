@@ -3213,6 +3213,39 @@ session scratchpad for diffing.
   API is already broken, on a timer you don't control.* Compile without the shims; if it fails,
   fix it now while the replacement API is fresh and the shim still tells you what it did.
 
+### Checklist pass over the SetFlag round (2026-09-04, late night) — semantics proven, 3 stale strings, 1 false alarm
+
+- **Cat 2, the one that mattered — is the helper hot-path-neutral?** Old vanilla `SetFlag`
+  early-returned when the flag already had the requested value: no `OnFlagsChanged`, no
+  network update. FreeBuild's lock sweeps and MixApartmentHome's power loops call it in bulk
+  on entities that are usually already in the target state, so if the new
+  `StartSetFlags`/`Set`/`Dispose` path sent an update regardless, the "identical behaviour"
+  claim would be false and traffic would go up. Decoded both with Cecil (extended the
+  inspector to match explicit-interface `Dispose` and show branches): `Set` returns early on
+  `HasFlag(f) == b`; `Dispose` compares `oldFlags` to `owner.flags` and skips both
+  `OnFlagsChanged` and `HandleFlagsUpdateMode` when equal. A no-op stays a no-op. Recursion
+  is handled inside `Set` via child scopes. Claim stands — with IL, not by assertion.
+- **Cat 1 finding (fixed, 3 plugins)**: hard-coded version literals in boot lines —
+  MixHeadlamp printed 1.0.4 (Info 1.0.7), MixQuarry 0.1.0 (Info 0.2.2), MixRaidBases 1.7.0
+  (Info 1.8.1). Same class as OSAuto-Turrets earlier; found by grepping the post-reload log
+  for `[Plugin] Plugin vX` lines and diffing against `[Info]`. Now `{Version}`; bumped to
+  1.0.8 / 0.2.3 / 1.8.2, compiled both modes, deployed AU + dedicated, boot lines verified.
+  The other 11 either use `{Version}` already or print no version line.
+- **Cat 9 false alarm, run down rather than dismissed**: MixRaidBases logged `OS
+  turrets=MISSING` during the 13-plugin reload. It was logged 6 s *before* OSAuto-Turrets
+  finished its own reload; the cold boot two hours earlier said `linked`, and the plugin's
+  `ResolveOsTurrets()` re-resolves lazily on every use by both names (`plugins.Find(
+  "OSAuto-Turrets") ?? plugins.Find("OSAutoTurrets")`). Confirmed on the 1.8.2 reload:
+  `linked`. Comment added at the boot line so the next reader doesn't chase it. Side fact
+  worth keeping: Carbon indexes plugins by their `[Info]` title, so a class named
+  `OSAutoTurrets` with title `OSAuto-Turrets` needs `[PluginReference("OSAuto-Turrets")]`
+  (MixSiloRaid does exactly that) — a bare `[PluginReference] Plugin OSAutoTurrets` would
+  silently stay null.
+- **Clean**: Cat 7 (helper null-guards the entity; `using var` disposes on throw — Cat 8),
+  Cat 12 (static class, no state), Cat 11 (no lifecycle surface), patcher handles both
+  namespace styles and refuses to double-apply. AU: 47 scripts, 0 failed after every reload
+  tonight; dedicated: all mirrored versions loaded, 0 failed.
+
 - **Pulse question settled the same night (→ 1.0.3)**: set `PulseAdminForCamera=false` on AU,
   reloaded (config re-save confirmed the value stuck), same non-admin rode the same bike:
   *"same, works, toggle works, all working."* Camera distance identical with the pulse off,
