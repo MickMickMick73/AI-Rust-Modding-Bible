@@ -2975,3 +2975,34 @@ the oracle where one existed.
   registration) — not added to `Init()`.
 - **Live oracle**: `c.plugins` — 46 scripts, 0 failed, 0 hook exceptions; deployed to AU and
   mirrored to the dedicated box (still offline, compile unverified there).
+
+### AU cold restart as the compile test, and the one thing it surfaced: MixImages 1.0.2 (2026-09-04, night)
+
+- **Restart**: `systemctl restart rust-mixmods-au-carbon` (the unit is `Restart=on-failure`, so
+  an RCON `quit` would have left it down — worth knowing before reaching for it), world saved
+  first, zero players on. 376s to "Server startup complete"; **46/46 compiled from cold, 0
+  failed**, every version from today present, 5x preset re-applied from MixCore.json on boot,
+  B1's five rifles still `x1`, 218 FPS, `[Shop]` audit lines confirmed in the daily-archived
+  Carbon log (server.log is truncated on every start — never rely on it for history).
+- **Cat 11 finding (fixed, MixImages 1.0.2)**: 14 "CommunityEntity.ServerInstance never became
+  ready, gave up storing" warnings for MixHud icons ~2.5 min into boot. Not new — 123–246 per
+  day in the archives, on every boot since the Carbon move — and masked in practice because most
+  callers warm their assets a second time in their own `OnServerInitialized`. Cause: v1.0.1
+  handled "world not up yet" with a **5×1s timer retry**, while a real cold boot has minutes
+  between plugin load and world-ready. A fixed retry budget against an event whose timing scales
+  with world size is the wrong shape. Now: before `OnServerInitialized`, bytes are parked in a
+  slot-keyed dictionary (same asset warmed twice = one copy) and flushed the moment the server
+  reports ready; `Init()` also sets ready-state from `CommunityEntity.ServerInstance` directly so
+  a mid-session reload never holds anything back waiting on hook ordering. Registry saves are
+  coalesced to one write per burst (a 17-asset warm was 17 disk writes — Cat 3), with the
+  pending save flushed in `Unload()` (Cat 11) and its timer destroyed (Cat 4/12).
+- **Verified so far (mid-session reload)**: compiled clean, 0 failed; MixCore re-warmed and
+  MixModsConnectUI re-queued through the new code with **zero** warnings since the reload;
+  registry intact at 228 slots including all 20 MixHud icons. The cold-boot path — the actual
+  fix — can only be proven by the next restart; recorded here as *unverified until then* rather
+  than assumed.
+- **Not a regression, noted**: only MixCore and MixModsConnectUI re-register when MixImages
+  reloads (they wire `OnPluginLoaded("MixImages")`); the other 14 warmers don't, and don't need
+  to — their slots persist in `MixImages/registry.json` and Rust's server FileStorage across a
+  plugin reload. A future MixImages change that *invalidated* stored slots would have to go
+  through a full restart, not a reload, for the same reason.
