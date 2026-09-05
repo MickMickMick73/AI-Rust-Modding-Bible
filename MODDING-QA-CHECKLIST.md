@@ -3665,3 +3665,51 @@ before gameplay items), Cat 11 (timers destroyed + save on Unload; hot reload ve
 Cat 12 (no statics beyond consts). Both boxes: 0 failed plugins after the reloads.
 
 **Owner re-test asked for**: one more Steam sign-in (the return check tightened).
+
+## In-game store panel, one menu theme for everything, and the kits audit (2026-09-05, afternoon)
+
+**Panel (MixStore 0.2.0 → 0.2.3).** First cut used Grok's store chrome at its own proportions;
+owner: same border, buttons and the larger size as the menu kit, everything uniform. Facts that
+decided the restyle: MixMenuKit's hub-set submenus draw `data/MixMenuKit/hub/frames/hud.png`
+and `buttons/rivet/*` which are byte-identical to the shared `MixPackAssets/uikit/frame_hud.png`
+and `btn_rivet_*` that MixCore's `/menu` already uses — so the pack has one frame family; the
+sidebar's `classic.panel` is the odd one out by design (it lives inside the inventory). The
+store now draws that frame at MixMenuKit's **wide** box (0.16,0.14)–(0.84,0.88), products as
+rivet plates (3×4, hover plate = selected, icon tinted, price on the plate), CLOSE as the same
+plate, title where the kit puts its own. Only the flat white icons and the logo remain from the
+Grok set in game; the store_* chrome stays web-only.
+- Checklist pass on 0.2.x (Cat 6 focus): cursor overlay now dies on death and respawn, refuses
+  to open over a native loot window (chest/vending; plain inventory is fine), re-warms textures
+  when MixImages loads late (`OnPluginLoaded`, same as MixHud), site strings sanitised before
+  they reach rich-text labels or a CUI command (`<`/`>` swapped, slug allow-list), unused
+  textures no longer uploaded to clients, draw guarded so a throw can't leave a half-drawn
+  cursor lock. Web: catalogue polls from the servers no longer create a PHP session file
+  each (only start a session when the cookie exists).
+- **MixCore 0.9.31**: `/menu`, the welcome window and every `API_AddUiWindow` box moved from
+  (0.18,0.12)–(0.82,0.88) to the kit's wide preset so the pack hub lines up with the kit menus.
+  Same frame texture already; only the box differed.
+
+**Kits (MixGovern 0.9.14 → 0.9.15, MixSkinsLight 1.15.3).** Owner: "kits players receive are
+incomplete and not always on theme". Made it measurable first — `mixgovern.kits.check [kit]`
+dry-builds every kit and reports unknown items, attachments that don't fit, unknown ammo,
+slot maths per container, and skin coverage. Findings:
+- **Dedicated box had no kits at all** (AU has eight). Mirrored AU's definitions over
+  (unload → write → load). Both boxes now identical.
+- No unknown shortnames, no attachment overflow, no bad ammo. The real defect: **amounts above
+  the live stack size were created as one over-stacked item** (`largemedkit x5` on a 1-stack,
+  `syringe x15` on 10, `bandage x20` on 15). Rust does not keep over-stacks honest in a player
+  inventory — that is the "incomplete". GiveKit now splits into real stacks; `KitFits` counts
+  the real slots. On AU (5× stacks) every kit now fits an empty inventory: 0 problems. On the
+  dedicated box (vanilla stacks) the raid/oil kits need 35 main slots — a kit-design fact, not a
+  bug; either apply the 5× preset there too (`mixtune.preset 5`) or trim those two kits.
+- **Skins: 0 of 76 entries carried one.** Added `API_SkinsFor`/`API_DefaultSkin` to
+  MixSkinsLight and `Kits.ThemeSkins` (default on) + `Kits.ThemeSkinSection` ("" = any,
+  "main", or a collection name) to MixGovern: an entry with Skin 0 is dressed in the server's
+  own whitelisted skin for that item. AU coverage today: raid/oil 5 of 24 entries, spawn 1 of 5
+  (whitelist covers AK, facemask, chest plate, kilt, boots, hammer, sleeping bag…). Owner to
+  say which section is "the theme"; the whitelist decides the rest.
+- Also fixed: a mod that doesn't fit the weapon was created and never placed (orphan item);
+  now destroyed with a warning. Unknown entries are logged by kit and item instead of a
+  silent `continue`.
+- Still to see in game: `/kit raid` on AU with an empty inventory should arrive complete and
+  wearing skins where the whitelist has them.
