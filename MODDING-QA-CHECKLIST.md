@@ -3926,3 +3926,21 @@ from what a call *is*, not from what the client *probably* does.
 
 Open from the read: the four `OnUserConnected(BasePlayer)` handlers (mechanical fix, low impact)
 and MixShowcase's restock-needs-a-player (low). Both parked until the owner wants them.
+
+## The two parked static-read items, fixed (2026-09-05, late)
+
+- **Connect handlers** — TwinBarrel 1.2.2, FreeBuild 2.4.6, Salvo 2.10.2, OSAuto-Turrets 1.7.4:
+  `OnUserConnected(BasePlayer)` → `OnPlayerConnected(BasePlayer)` (Carbon's covalence hook takes
+  `IPlayer`; the `BasePlayer` overload never ran). The dead `OnUserDisconnected` duplicates in
+  FreeBuild and Salvo removed (Cat 1) — `OnPlayerDisconnected` was already doing the work.
+  Found on the way: the dedicated box's OSAutoTurrets carried a 35-line legacy-tier migration
+  block the AU copy had already shed (same version number, different file). Patched from the AU
+  copy and deployed to both, so the boxes are level again — same-version-different-bytes is
+  worth a checksum whenever "both boxes" is claimed.
+- **MixShowcase 1.1.3** — rack restock no longer needs a player online. `WeaponRack.MountWeapon`
+  only uses its player argument for an RPC to that player and as the `MoveToContainer` owner,
+  both null-safe (IL), so it is now called with null when nobody is on. If a mount still fails
+  with nobody online the restock is marked pending and re-run 5 s after the next connect,
+  instead of dropping the weapon into the rack's hidden inventory (invisible, worse than empty).
+  Verify at the next AU restart with the gallery empty and nobody connected: racks should fill
+  at boot; if not, they fill within seconds of the first player connecting and the log says why.
