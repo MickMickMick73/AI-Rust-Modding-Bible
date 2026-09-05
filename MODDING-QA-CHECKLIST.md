@@ -3753,3 +3753,44 @@ first 22 entries and then failed — a partial kit with a "make space" message a
 **Open**: dedicated box runs vanilla stacks, so raid/oil kits can't fit there (35 main) —
 owner to choose 5× preset there or trim; which skin section is "the theme"
 (`Kits.ThemeSkinSection`, currently any).
+
+## Kits follow the world preset; medkits stack again; TwinBarrel rebuilt on the truth (2026-09-05, evening)
+
+Owner after the kit fix: "items that should stack are not stacking now (med kits)"; kits should
+carry 5× consumables on a 5× preset but not 5× gear; the double-barrel mod never fired both.
+
+**Medkits (MixWorldTune 0.6.7 → 0.6.8).** The "never stackable" rule was "vanilla stack ≤ 1",
+written after the AK-in-one-slot loss; it also froze conditionless consumables Facepunch ships
+as stack 1 (large medkit). The kit split then showed five single medkits where an over-stack of
+5 used to hide the fact. Rule is now definition-aware: vanilla-1 stays at 1 only when the item
+has condition, spawns a held entity, or is in the weapon/tool/attire categories. Large medkits
+stack to 5 on the 5× preset. Exposed `API_GetStackMultiplier`, `API_GetVanillaStack`,
+`API_IsNeverStackable` for kits.
+
+**Kits × preset (MixGovern 0.9.17 → 0.9.19).** `Kits.ScaleWithWorldPreset` (default on):
+consumable amounts × the stack multiplier; gear never. "Consumable" = anything Rust itself lets
+you stack (ammo, meds, syringes, bandages, C4, satchels, grenades, resources, teas) or a
+conditionless non-held vanilla-1 item (medkit) outside the weapon/tool/attire categories.
+Two audit rounds caught two wrong rules on the way: excluding held entities dropped syringes,
+bandages and explosives from scaling (0.9.17); dropping categories scaled *boots* ×5 (0.9.18).
+The audit output is what caught both — read it, don't reason about it.
+- The AU kits had been authored while 5× was live, so scaling them again would have meant 25
+  medkits and 1,280 rifle rounds. `mixgovern.kits.rebase 5 apply` (new, dry-run without
+  `apply`) divided 43 consumable amounts by 5 on both boxes; the effective amounts on 5× are
+  what players had (raid: 10 belt syringes, 5 medkits, 255 rifle rounds, 20 satchels) and every
+  kit now fits an empty inventory on either preset — raid needs 15 main slots instead of 35.
+  Rounding drift on small counts: rockets 12 → 10, C4 2 → 5 and 8 → 10, teas 3 → 5.
+- Dedicated box put on the 5× preset (`mixtune.preset 5`) so it matches AU; both audits: 0 problems.
+
+**TwinBarrel 1.1.2 → 1.2.0.** Why it never worked, from the IL: the shooter's client simulates
+the pellets and reports them (`CLProject`); the server cannot add pellets to that shot. 1.1.x
+called `BaseProjectile.ServerUse` for the second shell — on this build that is the NPC/turret
+path: a server-side hitscan from `GetAIAimcone`, no client-visible projectile, and its signature
+is now `ServerUse(HeldEntityServerUseParams)`. Carbon does patch `OnWeaponFired` (`c.hooks` row
+162, 1 subscriber) so the hook was firing; the second barrel just did nothing visible.
+1.2.0: on the first shell's `OnWeaponFired` the second shell is spent server-side (client sees the
+magazine hit 0), a second muzzle flash is broadcast, and for 1.5 s every pellet hit of that shot
+(`OnPlayerAttack`, same weapon id) has its damage scaled ×2 (`DamageMultiplier`). One trigger,
+two shells, double the hit, vanilla reload. `DebugLog` on AU for the owner's test; per-player
+window cleared on disconnect (Cat 4). Compile rc 0, `NO_PROXY=1` rc 0, live on both boxes.
+**Not yet fired by a human** — that is the next check.
