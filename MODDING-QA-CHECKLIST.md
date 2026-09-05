@@ -3794,3 +3794,7 @@ magazine hit 0), a second muzzle flash is broadcast, and for 1.5 s every pellet 
 two shells, double the hit, vanilla reload. `DebugLog` on AU for the owner's test; per-player
 window cleared on disconnect (Cat 4). Compile rc 0, `NO_PROXY=1` rc 0, live on both boxes.
 **Not yet fired by a human** — that is the next check.
+- **TwinBarrel 1.2.0 fired by the owner on AU (17:39–17:40)**: 3 trigger pulls → 3 "twin shot —
+  second shell spent" lines, each followed by 4–20 pellet hits scaled ×2 within the window,
+  0 single-shell shots, 0 errors. First time the plugin has demonstrably done anything since it
+  was written. Debug logging switched back off after the read.
