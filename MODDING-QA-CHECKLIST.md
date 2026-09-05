@@ -3798,3 +3798,71 @@ window cleared on disconnect (Cat 4). Compile rc 0, `NO_PROXY=1` rc 0, live on b
   second shell spent" lines, each followed by 4–20 pellet hits scaled ×2 within the window,
   0 single-shell shots, 0 errors. First time the plugin has demonstrably done anything since it
   was written. Debug logging switched back off after the read.
+
+### Checklist pass over the preset/medkit/TwinBarrel round (2026-09-05, night) — 1 finding
+
+- Cat 1: TwinBarrel 1.2.0 kept `SecondBarrelDelay` "for old configs" — a config field with no
+  read site is exactly what Cat 1 forbids (Newtonsoft ignores unknown members on load, so old
+  configs need nothing). Removed → **1.2.1**, both boxes.
+- Cat 2: TwinBarrel's two hot hooks ordered cheapest-first (`OnWeaponFired`: enabled → item
+  shortname → permission; `OnPlayerAttack`: dictionary lookup before anything). Cat 4: the
+  per-player twin window is removed on disconnect and expires on the next hit. Cat 7/8: kit
+  audit probes always removed, each kit contained. Cat 9: new `API_*` on MixWorldTune and
+  MixSkinsLight carry `[HookMethod]`. Cat 12: no new statics. Cat 10: pellet ×2 is a PvP
+  balance choice — owner's, noted.
+
+## Static "would this even work?" read of the standalone suite (2026-09-05, night)
+
+Owner's point after TwinBarrel: a plugin can be shown non-functional by reading it, before any
+test. So every standalone plugin on AU was read at the level of "what hook fires, what API
+produces the effect, can that API produce it on this build". Method, so it's repeatable:
+1. Mechanical sweep: every `On*/Can*/Should*` method in every plugin vs. Carbon's live hook
+   table (`c.hooks`) and the hook assembly. Caveat learned: Carbon serves some hooks from
+   internal static patches (`IOnPlayerChat (*)`, `IOnEntitySaved (*)`), so "not in the table" is
+   only a lead, not proof.
+2. For each plugin: the API call that produces the visible effect, checked against the
+   inspector (does it exist, is it server-side, does the client honour it).
+3. Anything touching client-only state (Unity `Light`, prefab ScriptableObjects, per-client
+   snapshots) is a suspect by construction: the server cannot change what the client renders
+   except through networked entity state.
+
+**Suspects to test before fixing (ranked by confidence)**
+1. **MixHeadlamp** — `BoostComponentLights` edits `Light.range/intensity/spotAngle/color` on
+   the server's copy of the player/hat entity. Clients render their own `Light` from the prefab;
+   none of those fields are networked. Only the fuel top-up and the `lighttoggle` mapping can
+   have any effect. Same class as TwinBarrel. Test: night, miner's hat on, plugin loaded vs
+   unloaded — identical beam expected. Side note: `OnItemUse` both cancels the fuel use *and*
+   adds the amount back, so the hat's fuel count should climb while lit.
+2. **MixSuitSlots** — patches `Wearable.occupationOver/Under` on the server's wearable
+   definitions so extra clothing fits over a hazmat. The client validates wear-slot conflicts
+   with its own copy of those definitions before it ever sends the move, so the drag should
+   refuse client-side. Test: wear a hazmat, try to put on boots/hat; expected: refused.
+3. **MixSky** — personal day/night by sending one `EnvSync` snapshot with a faked hour, then
+   restoring; the real `EnvSync` keeps broadcasting the true time, so the client should snap
+   back within seconds and the 8 s pulse would make it flicker rather than hold. Test: `/sky
+   night` at midday; watch for reverts.
+4. **OnUserConnected(BasePlayer)** in TwinBarrel, FreeBuild, OSAutoTurrets, Salvo — Carbon's
+   covalence hook takes `IPlayer`; a `BasePlayer` overload never fires (the same family as the
+   `OnUserDisconnected` finding in Cat 4). Consequences are small: admin perms not granted on
+   connect (TwinBarrel/OSAutoTurrets fall back to auth-level checks anyway), FreeBuild's
+   creative resync waits for its 30 s timer, Salvo/FreeBuild "close panel on connect" no-ops.
+   Fix is mechanical (`OnPlayerConnected`).
+5. **MixShowcase** — mounting a weapon on a rack needs a `BasePlayer` (`rack.MountWeapon(item,
+   player, …)`); it borrows the first connected player. At boot with nobody online the restock
+   drops weapons into the rack's hidden inventory instead. Self-heals on the next 5-minute
+   refill with someone on. Test: restart with the gallery empty and nobody connected.
+
+**Read and found sound at mechanism level**: MixSkinOwnership (Steam inventory definitions +
+`HasItem`), MixCompanionFix (Harmony prefix on `CompanionServer.Util.SendDeathNotification`,
+present), MixCarbonLeakGuard, MixPackAssetsShim, MixPlace, MixGrid (IO slot linking +
+`MarkDirtyForceUpdateOutputs`), MixAngler (`OnFishCatch` patched), RescueSurface, MixHorde,
+MixTrophies (all five hooks patched), MixExtract, MixQuarry (`MiningQuarry.SetOn` via
+reflection, `OnQuarryToggle` patched), TimeOfDay (MixWorldTune's own day/night is off on AU, so
+no fight over `DayLengthInMinutes`), MixUiFix, MixSprint (`Modifier.ModifierType.MoveSpeed` is
+consumed by `BasePlayer.GetSpeed` → a vanilla mechanism), FreeBuild (`ConVar.Creative.
+toggleCreativeModeUser` exists; the console index is case-insensitive), MixEntityScale
+(`networkEntityScale` is Facepunch's own scale sync), MixSignboard (FileStorage + textureIDs),
+BagTimer (`SleepingBag.unlockTime`), MixAdminMove, MixRackKit, MixBoatHelm (drives the boat
+through server-side motor/anchor state), Salvo (extra rockets are server entities, unlike
+pellets). Not read line-by-line: MixApartmentHome, MixInstantBases, MixRaidBases, MixSiloRaid
+(hooks all patched; mechanism is entity spawning, which the server owns).
