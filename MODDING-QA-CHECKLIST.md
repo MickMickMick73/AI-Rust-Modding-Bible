@@ -3393,6 +3393,25 @@ session scratchpad for diffing.
   spacing the owner asked for stays. **Cat 6 rule**: *fixed-point fonts inside proportional
   rows will silently disappear the day the container shrinks — set vertical overflow on any
   label whose row height isn't derived from its font size.*
+- **Owner asked for a live accuracy test of the event wells (MixHud 4.1.8→4.1.10, both boxes).**
+  Built the oracle into the plugin rather than eyeballing: `mixhud.events` (RCON/admin) prints
+  the cached flags the wells are painted from beside a fresh typed walk of `serverEntities`
+  (PatrolHelicopter / BradleyAPC / CargoShip / SupplyDrop / CargoPlane / CH47 AI vs
+  player-flown) with positions, plus every prefab name the string fallbacks would match.
+  First run: heli/brad/cargo/drop all truthful (1/1/1/2 on AU) — **but CH47 lit on both
+  servers with zero chinooks in the world**. The prefab-name fallback in `ClassifyEvent`
+  (kept for build renames) matched **"chinook call terminal"**, a static monument fixture, so
+  that well had been lit permanently on any map with one; the same fallback would keep
+  Bradley "active" on `bradley_crate` loot after it died, and cargo on the ship's
+  `door.hinged.cargo_ship_side` parts. Fix: `IsEventLeftover()` gates the name fallback —
+  crate/gib/debris/corpse/marker/spawner/terminal/door names never count (typed checks are
+  untouched). After a scan cycle: AU heli=F brad=T cargo=T drop=T ch47=F vs live 0/1/1/3/0,
+  dedicated brad=T drop=T rest=F vs live 0/1/0/2/0 — every well equals the world, and the
+  probe shows the terminal and doors as "(ignored)". **Cat 7 rule**: *a substring fallback on
+  prefab names must exclude the event's leftovers and lookalikes (crates, gibs, markers,
+  terminals, doors) — and "is the icon right?" is answered by counting the world, not by
+  looking at the icon.* Drop semantics kept as-is: a landed, unlooted crate is still "a drop
+  out there".
 - **Launcher hardening**: the running-check in `Start-Dedicated-Detached.cmd` used `find`,
   which under a Git-bash-polluted PATH resolves to GNU find and fails; now `findstr`.
 
