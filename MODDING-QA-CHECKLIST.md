@@ -3487,3 +3487,84 @@ session scratchpad for diffing.
   to — their slots persist in `MixImages/registry.json` and Rust's server FileStorage across a
   plugin reload. A future MixImages change that *invalidated* stored slots would have to go
   through a full restart, not a reload, for the same reason.
+
+## MixStore — the perk store, built and proven end-to-end on both boxes (2026-09-05)
+
+Owner-approved design (pull model, suggested catalogue, VentraIP hosting): a PHP 8.3 + MariaDB
+API on VentraIP (`api/mixstore/`), a store front (`store/`), and **MixStore.cs 0.1.4** on each
+game server polling `agent/poll.php` every 30 s with a per-server bearer token (SHA-256 stored)
+and acking each fulfilment. No inbound ports, no RCON, no card data anywhere near us (Stripe
+Checkout + signed webhook). Full design in `_mixstore/DESIGN.md`; ops in the memory file.
+
+Order of work, as the checklist demands: dedicated first (schema → simulated orders → plugin),
+AU only after every dedicated test passed. Every plugin build went through the offline harness
+(`compile.sh` rc checked, `NO_PROXY=1` rc 0) before it touched a box.
+
+### What was proven, with the evidence
+- **Grant path** (`grant_preset vip`, `grant_perm`, `add_balance`): simulated paid orders →
+  fulfilments pending → plugin applied and acked within one poll. Console `c.show user`
+  listed the 19 VIP perms + the bought perm on a fresh SteamID; `MixPack/balances.json`
+  moved by exactly the bought RP on both boxes (AU: points 12973 → 15473).
+- **Offline delivery** (`give_item`, `give_kit`): acked `deferred`, held in
+  `data/MixStore/state.json` `Queue`, delivered `OnPlayerConnected`/`OnPlayerRespawned`, then
+  acked `done`. Still to be watched by the owner in game (two deliveries are waiting on AU).
+- **Revoke** (refund/dispute/subscription end → `revoke_entitlement`): the bought perm
+  disappeared from `c.show user`; the VIP preset from another order stayed. (Cat 8.)
+- **Expiry without the website**: backdated a VIP grant in the state file (unload → edit → load,
+  the same discipline as MixMenuKit), the 60 s sweeper revoked all of it: `c.show user` → 0.
+- **Idempotency**: `Applied` ids are remembered (capped 2000); a re-sent fulfilment whose ack
+  was lost is re-acked, never re-applied (no double RP). `_busy` has a 120 s watchdog so a lost
+  callback can't wedge polling forever.
+- **Web hygiene**: `config.local.json`, `schema.sql`, `.htaccess`, `cache/` all 403 on VentraIP;
+  admin key via header only; checkout requires same-origin + Steam session; the success page
+  never marks anything paid — only the signature-checked webhook does.
+
+### Three real findings, all in Carbon's permission library — none visible from a read-through
+1. **`permission.GrantUserPermission(id, perm, this)` returns false for any perm the calling
+   plugin didn't register itself** (Oxide semantics; `PermissionExists(perm, owner)` is
+   owner-scoped). MixGovern gets away with it because it registers the whole catalogue as its
+   own. A store plugin granting other plugins' perms must pass **`null`** as owner, and must
+   **check the bool** — ignoring it was how the first build "succeeded" while granting nothing.
+2. **Grants to a SteamID Carbon has never seen go to a shared blank record and are never
+   saved.** `GrantUserPermission` calls `GetUserData(id, addIfNotExisting:false)`, which returns
+   the static `_blankUser` for unknown ids (IL read via the harness inspector). The symptoms
+   were bizarre until the IL explained them: a second unknown id "already had" the 19 perms the
+   first one was granted, `c.show user` disagreed with `UserHasPermission`, the id never appeared
+   in `oxide.users.data`. Fix: `if (!permission.UserExists(uid)) permission.GetUserData(uid, true)`
+   before any grant. This matters precisely for the store's edge case — someone buying before
+   their first connect — and would have been a silent "paid, got nothing" ticket.
+3. **A perm nobody registers can't be granted** (`mixarcade.use` on the dedicated box where
+   MixArcade isn't loaded → false). The plugin now warns by name instead of counting it as
+   applied; the preset still grants the other 18.
+
+Rule added to Cat 7/8: **grants and revocations are not "done" when the call returns — they are
+done when `c.show user <id>` on a fresh SteamID says so.** Use a never-seen id for the test; an
+admin's own account already holds everything and proves nothing (the first two rounds here
+tested against the owner's id and looked fine).
+
+### Design decisions worth keeping
+- Each grant records `Added` — only the perms the player did **not** already hold. Expiry and
+  refunds take back only those, so a hand-granted perm or an admin's own VIP is never stripped
+  by a store event. Older records without the list fall back to the full set.
+- Unknown kit / unknown item is a permanent failure (acked `failed`, visible in admin), not a
+  queue entry that waits forever (0.1.4). A kit removed from config *after* queueing is dropped
+  and acked `failed` on the next connect, with the reason.
+- Timed perks extend rather than stack: buying VIP twice moves one expiry forward.
+- `test_mode` orders (simulated or Stripe test keys) are flagged and can be deleted;
+  paid live orders can only be revoked, never deleted.
+
+### Side finding on the same host, fixed
+`/api/carneys-shop/config.local.json` (holds an xAI key) answered **200** over the web on
+VentraIP. Added `api/carneys-shop/.htaccess` (deny `*.json`, `*.log`) → 403; the shop's PHP
+reads the file from disk so nothing broke (`status.php`, `catalog.php` still 200). The key
+itself should be rotated since it was exposed for an unknown time.
+
+### Still open (deliberately)
+- **Stripe phase**: register `https://mixapps.store/api/mixstore/webhook.php` in the Stripe
+  dashboard (test mode first), paste the signing secret into `config.local.json →
+  stripe.test.webhookSecret`, then test-card purchases and a refund → revoke. `status.php`
+  reports `stripe_webhook_secret:false` until then.
+- Facepunch server-monetisation rules check before anything gameplay-affecting (supply drops)
+  is listed. Prices are placeholders.
+- Grok assets (`MixStore-Asset-List.txt`) and the in-game CUI store panel that needs them.
+- `CanBypassQueue` compiles and is hooked but was not exercised (no queue on either box).
