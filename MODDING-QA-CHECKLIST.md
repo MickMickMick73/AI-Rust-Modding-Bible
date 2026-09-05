@@ -3713,3 +3713,43 @@ slot maths per container, and skin coverage. Findings:
   silent `continue`.
 - Still to see in game: `/kit raid` on AU with an empty inventory should arrive complete and
   wearing skins where the whitelist has them.
+
+### Checklist pass over the theme/kits round + what `/kit raid` actually gave (2026-09-05, evening)
+
+Scope: MixStore 0.2.3, MixCore 0.9.31, MixGovern 0.9.14 → **0.9.16**, MixSkinsLight 1.15.3,
+MixCommerce 0.8.4 → **0.8.5**. Dedicated first, AU after, compile rc 0 each time.
+
+**Ground truth from the owner's `/kit raid` on AU** (`mixcommerce.inv` read straight after):
+every entry landed as proper stacks (medkits as 5 singles, syringes 10+10+5, bandages 15+5,
+timed 2+8) **except the flashbangs and the water jug** — main was 24/24. Cause: not a plugin
+bug this time but arithmetic: the kit needs 19 main slots on an empty inventory, the belt was
+already 4/6 so four belt entries spilled to main, the road-sign jacket can't be worn with the
+metal chest plate so it spilled too, plus three pre-existing stacks = 27 > 24. `/kit` gave the
+first 22 entries and then failed — a partial kit with a "make space" message after the fact.
+- **Fix (0.9.16, Cat 7)**: `/kit` now runs the same all-or-nothing room check the store path
+  already had, and refuses up front with the exact numbers ("needs 19 main / 6 belt / 5 wear,
+  you have 3 / 2 / 4 — nothing was given"). No more partial kits from either path.
+- **Skins proven**: the AK, facemask, chest plate, kilt and boots from the kit carry workshop
+  ids (`@3755939416` etc.) — `Kits.ThemeSkins` works end to end. `mixcommerce.inv` (0.8.5) now
+  prints `@skin` per item so this can be checked without a screenshot.
+- **Kit design note for the owner**: road-sign jacket and metal chest plate share the chest
+  slot; the raid/oil kits list both, so one always ends up in the bag. Swap the jacket for a
+  hoodie + pants (both skinnable on the whitelist) if the intent is a full worn set.
+
+**Review findings, fixed**
+- Cat 8: `mixgovern.kits.check` now contains each kit's dry-build in its own try (a bad entry
+  reports as that kit's problem instead of aborting the whole report).
+- Cat 7: probe items in the audit are always removed (`finally`); a weapon mod that doesn't
+  fit is destroyed, not leaked (0.9.14).
+- Cat 1: MixStore no longer uploads the Grok chrome it stopped drawing; `ThemeFiles` are read
+  from the shared uikit so there is exactly one copy of the frame/plates on the client.
+- Cat 9: `API_DefaultSkin`/`API_SkinsFor` carry `[HookMethod]`; MixGovern treats a null return
+  (older MixSkinsLight) as "no skin" rather than failing the kit.
+- Clean: Cat 2 (theme-skin lookup is per item created, kit path only), Cat 4/6 (panel state
+  cleared on disconnect, overlay dies on death/respawn, never over loot — verified in code and
+  by the owner using it), Cat 5 (no new perms), Cat 11 (MixCore box change is anchors only;
+  reloaded live on both boxes, 0 failed), Cat 12 (no new statics beyond consts).
+
+**Open**: dedicated box runs vanilla stacks, so raid/oil kits can't fit there (35 main) —
+owner to choose 5× preset there or trim; which skin section is "the theme"
+(`Kits.ThemeSkinSection`, currently any).
