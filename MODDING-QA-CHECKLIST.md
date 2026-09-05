@@ -3884,3 +3884,10 @@ pellets). Not read line-by-line: MixApartmentHome, MixInstantBases, MixRaidBases
   → regen. Now `IsRunning()` OR the bit. Compile rc 0 / `NO_PROXY=1` rc 0, dedicated → AU.
   Lesson for Cat 7: **when a plugin infers a player's state, use the field Rust itself uses for
   that state, not the input that usually produces it.**
+- **MixSky: removed** (owner: does nothing, no point). Both boxes: `mixsky.use` revoked from
+  default, plugin unloaded, `MixSky.cs` + `MixSky.json` removed, the three SKY plates taken out
+  of RIDE & VIEW (9 plates now; unload → write → load), packaging copy removed. Sources kept in
+  the session scratch only. Left in place on purpose: MixCore's mod-manager metadata line for
+  "mixsky" (inert text, would need a MixCore redeploy for nothing). Suspect #3 confirmed the
+  hard way — the per-client EnvSync snapshot never showed anything.
+- **MixSprint 2.3.2: owner-confirmed fixed.**
