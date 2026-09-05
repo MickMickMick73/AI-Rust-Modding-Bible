@@ -3607,3 +3607,61 @@ itself should be rotated since it was exposed for an unknown time.
   success page.
 - Still test keys. Going live = `stripeMode: "live"` + `register live` + a $1 product refunded
   once, then reprice.
+
+### Checklist pass over the MixStore round (2026-09-05, afternoon) — 5 plugin findings, 5 web findings, all fixed
+
+Scope: MixStore 0.1.5 → **0.1.6**, MixGovern 0.9.12 → **0.9.13**, store API 0.1.0 → **0.1.1**, the
+store front. Deployed dedicated → AU after compile (rc 0, `NO_PROXY=1` rc 0), Stripe skill's
+security reference cross-checked (signature verification, Checkout Sessions, no
+`payment_method_types`, keys outside the repo — all already true).
+
+**Plugin**
+- **Cat 8 / idempotency (real)**: `Applied` was saved only at the end of a batch. A crash after
+  `add_balance` applied but before the state file was written would re-apply on the next poll
+  (double RP). Now the state is saved per fulfilment, *before* its ack goes out — a crash can
+  only cause a re-ack, never a re-apply.
+- **Cat 8**: the batch continuation ran inside the ack callback with no guard; a throw there
+  stranded `_busy` for the 120 s watchdog. `SweepExpired` and `DeliverQueued` (timer callbacks)
+  were unguarded too. All three contained; the sweep/delivery bodies moved to `*Core` methods.
+- **Cat 7/9 (real)**: `grant_perm` for a perm no loaded plugin registers returned **done** while
+  granting nothing, with a log line promising it would "work once that plugin loads" — false on
+  Carbon (`GrantUserPermission` → false). Now `failed` with the reason, so the site retries it up
+  to 10 polls (proven: `nosuchplugin.perm` → `failed ('… not registered …')`, store row `pending`
+  attempts 2, nothing recorded locally). `grant_preset` stays `done` when anything landed and
+  names the missing perms in the note; fails only when none are registered.
+- **Cat 2**: revoking or expiring a 19-perm preset called `PresetPerms` (cross-plugin call +
+  JSON parse) once per perm per remaining grant. Memoised per poll/sweep.
+- **Cat 1**: `mixstore.permtest` kept as an admin diagnostic but its doc now says it *really
+  grants* the perm (it does — that's the point).
+
+**MixGovern `API_GiveKit`**
+- A store-delivered kit was consuming the player's free `/kit` cooldown → cooldown only set
+  when the caller asks for it.
+- `GiveKit` places items one at a time and stops at the first that doesn't fit, so a retry from
+  MixStore's queue would duplicate the ones already placed. Added a conservative room check
+  (one free slot per entry, belt/wear shortfall pooled onto main) before anything is created.
+
+**Web API**
+- `ms_client_ip` trusted `X-Real-IP`, which is client-settable on the direct-served host —
+  a spoofable audit field. `REMOTE_ADDR` only.
+- `status.php` listed tables, PHP extensions and Stripe configuration to anyone. Public view is
+  now ok/version/db/servers; the rest needs the admin header (CLI updated to send it).
+- Steam OpenID return: added the two checks the spec expects and the first cut skipped —
+  `openid.identity` must equal `openid.claimed_id`, and `openid.op_endpoint` must be Steam's.
+- Customer-facing `orders.php` no longer exposes fulfilment `note` (plugin/kit names belong in
+  admin, not on a public page).
+- Dead SQLite branch in `ms_migrate` removed.
+
+**Recommendation not actioned (owner's dashboard)**: the store reuses the site's `sk_test`/
+`sk_live` keys. Stripe's guidance is a restricted key (`rk_`) per integration with only
+Checkout Sessions, Refunds and Webhook Endpoints write — a compromise then can't touch
+payouts or customers. Paste it into `config.local.json → stripe.<mode>.secretKey` (already
+honoured over the shared key) when convenient.
+
+**Clean**: Cat 3 (I/O only at batch/sweep boundaries), Cat 4 (state is per-SteamID and meant
+to persist), Cat 5 (`mixstore.admin` in Init; `mixpack.queue.skip` registered without a prefix
+warning on either box), Cat 6 (no CUI yet), Cat 10 (already flagged: Facepunch rules review
+before gameplay items), Cat 11 (timers destroyed + save on Unload; hot reload verified 3×),
+Cat 12 (no statics beyond consts). Both boxes: 0 failed plugins after the reloads.
+
+**Owner re-test asked for**: one more Steam sign-in (the return check tightened).
