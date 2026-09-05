@@ -3891,3 +3891,38 @@ pellets). Not read line-by-line: MixApartmentHome, MixInstantBases, MixRaidBases
   "mixsky" (inert text, would need a MixCore redeploy for nothing). Suspect #3 confirmed the
   hard way — the per-client EnvSync snapshot never showed anything.
 - **MixSprint 2.3.2: owner-confirmed fixed.**
+
+### Checklist pass over the sprint/removal round, and the static-read scorecard (2026-09-05, late)
+
+**Scope**: MixSprint 2.3.2, MixSky removal (plugin, config, perms, three menu plates on both
+boxes), TwinBarrel 1.2.1. Both boxes: 0 failed plugins.
+- Cat 2/7 (MixSprint): `IsRunning()` is a null-guarded field read (IL checked) called once per
+  tick per player — no new cost. The `estimatedSpeed > 1.1` guard stays in front of it, so a
+  client that claims "sprinting" while standing still doesn't drain. Force-walk still applies
+  the negative MoveSpeed modifier for toggle-sprint clients whose model state keeps saying
+  sprint after the input bit is stripped — the penalty never depended on the bit.
+- Cat 5 (MixSky): `mixsky.use` revoked before unload; `oxide.users.data` / `oxide.groups.data`
+  on both boxes contain no `mixsky` string; `c.show perm mixsky.use` → "couldn't find that
+  permission". Nothing dangling. Cat 6: its Unload destroyed its panel and re-sent real time.
+- Clean elsewhere; nothing new to fix this round.
+
+**Static-read scorecard, now that the owner has tested all three client-state suspects**
+| suspect | my read | result |
+|---|---|---|
+| MixSky (EnvSync snapshot) | can't hold | **right** — did nothing; removed |
+| MixSuitSlots (server-side wearable masks) | client refuses | **wrong** — works |
+| MixHeadlamp (server-side `Light` edits) | client ignores | **wrong** — owner: works at night |
+
+One in three. The rule "the server can't change what the client renders except through
+networked state" was right about Sky and wrong about the other two, which means my model of
+*what is networked or server-authoritative* was incomplete, not the rule itself: wear-slot
+conflicts are decided by the server's `CanWearItem` and the client accepts the answer; the
+headlamp evidently reaches the client through a path the read didn't identify (the entity
+flag + fuel path at minimum — the beam-strength claim was not A/B'd, only "it works"). Method
+change: a client-state suspicion is a **test request, not a verdict**; it ranks the test order
+and nothing else. The mechanical hook sweep (TwinBarrel's `ServerUse`, the
+`OnUserConnected(BasePlayer)` family) is the part of the read that has been reliable — it argues
+from what a call *is*, not from what the client *probably* does.
+
+Open from the read: the four `OnUserConnected(BasePlayer)` handlers (mechanical fix, low impact)
+and MixShowcase's restock-needs-a-player (low). Both parked until the owner wants them.
