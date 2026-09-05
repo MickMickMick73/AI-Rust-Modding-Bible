@@ -3588,3 +3588,22 @@ itself should be rotated since it was exposed for an unknown time.
 - **Not yet exercised with a real queue**: an admin can't test it (owners always jump). Test
   recipe: on the dedicated box `server.maxplayers 0`, a non-admin joins → queued; simulate
   `queue-skip` for their SteamID → they should be pulled in within one poll.
+
+### Stripe test mode closed the loop with a real card (2026-09-05, afternoon)
+
+- Two humans (owner locally, son 100 km away) signed in with Steam and reached Stripe Checkout;
+  both sessions and personas landed in the store DB. Orders stayed `pending` — correct, because
+  the only thing that marks an order paid is the signed webhook, which wasn't registered yet.
+- Webhook endpoint registered via the Stripe API (`tools/mixstore-stripe.py register test`,
+  secret written straight into config, never shown). First proof was a **locally-signed**
+  `checkout.session.completed` for a pending order (`selftest`) → paid → +15,000 RP on the
+  dedicated box within one poll. Then the real thing: owner paid $4.95 for queue skip with
+  `4242…`; Stripe delivered `checkout.session.completed` (pending_webhooks 0), order paid,
+  `mixpack.queue.skip` on the owner in `c.show user`. Full refund via API → Stripe sent
+  `charge.refunded` → order `refunded`, `revoke_entitlement` fulfilment → perm gone from
+  `c.show user`. Payment → grant → refund → revoke, all machine-verified, no hand steps.
+- Rule kept: prove a webhook with a self-signed event before spending anyone's card; it splits
+  "our endpoint is wrong" from "Stripe isn't reaching us" — the two look identical from the
+  success page.
+- Still test keys. Going live = `stripeMode: "live"` + `register live` + a $1 product refunded
+  once, then reprice.
