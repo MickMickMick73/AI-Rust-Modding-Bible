@@ -4043,3 +4043,22 @@ byte-exact to the private mirror.
   and a cleared instance ref. Second agent's independent read of the same diffs: no further
   findings.
 - Deployed dedicated-first, then AU; mirror synced. Dedicated: Hud 4.2.1, Govern 0.9.22, Apartment 1.10.4 loaded clean at boot (0 failed). AU 06:58: all three loaded, 0 failed. Mirror e3b401b, zero drift.
+
+### Checklist run requested after the FPS session (2026-09-06, morning) — nothing in scope, two method notes
+
+- Scope check first: no plugin, config, site or box change since the batch H loads at 06:58 (AU log
+  has no load/unload/request lines after them; mirror `--verify` zero drift; the three configs with
+  newer mtimes were plugin re-saves with identical content — MixMenuKit writes its config on every
+  `OnServerSave`). So there is no round to checklist; recording the two things the session taught.
+- **Client FPS triage belongs on the client first.** "AU feels slow, 75–80 FPS" was VRAM saturation on
+  the owner's PC — 15.1 of 16.3 GB at max texture quality on the 4k map plus custom skins, five
+  "[GC] Emergency garbage collection" lines per session in `Rust/output_log.txt`, and one
+  "Disconnected (Unresponsive)" that was the same stall seen from the server. Server tick was 82–114
+  throughout. One texture-quality notch: 7.9 GB, zero emergency GCs, 100–140 FPS. Order of checks that
+  settled it in minutes: `server.fps` / `serverinfo` (server), `c.plugins` per-minute cost since reload
+  (mods), `nvidia-smi --query-gpu=memory.used,utilization.gpu` and the client log's GC lines (client).
+  The earlier GPU device-removed crashes sat right after the same emergency collections.
+- **Verify bytes before calling mojibake.** A config diff run through `ssh … cat | python` on Windows
+  showed the "←" on eight BACK/ADMIN buttons as `â†` on AU; `od -c` on the box showed the correct
+  `E2 86 90`. The decoder on the reading side was cp1252, not the file. Same rule as the CRLF one:
+  the byte-exact question is answered with bytes on the box, never with text through a console.
