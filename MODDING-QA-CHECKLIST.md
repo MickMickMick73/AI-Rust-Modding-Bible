@@ -3412,6 +3412,49 @@ session scratchpad for diffing.
   terminals, doors) — and "is the icon right?" is answered by counting the world, not by
   looking at the icon.* Drop semantics kept as-is: a landed, unlooted crate is still "a drop
   out there".
+- **Checklist pass over MixHud 4.1.6→4.1.10 + launcher scripts — clean.** `ApplyPlateAspect`
+  is try/caught and only rewrites `AnchorMin.y` (Cat 7); `ConEvents` walks entities twice but
+  is admin/RCON-only (Cat 2); `IsEventLeftover`'s `scientist && !ch47` clause is deliberate
+  (`scientistnpc_cargo_*` carries "cargo"); `MenuButtonChat` empty still reaches the legacy
+  popup (Cat 1); `VerticalOverflow` on both label helpers (Cat 6); no new statics (Cat 12).
+
+## Skins: "BAD SHORTNAME" on the L96 — a tag-wording gap, then a whole collection as its own section (MixSkinsLight 1.13.2 → 1.15.1, 2026-09-05)
+
+- **Root cause, in one line**: Steam tags the item **"L96"**, Rust calls it **"L96 Rifle"**, and the
+  tag→shortname guess was an exact match on Rust's display names — so the L96 fell to the
+  manual box, which validated the typed text with a bare `FindItemDefinition` and said BAD
+  SHORTNAME for anything but `rifle.l96` verbatim. The owner "had no idea how that is meant to
+  work" — correctly: nothing told them the exact string.
+- **What the plugin now does (1.15.1)**: (1) **Rust's own skin index first** — the bundled
+  `ItemSkinDirectory` (only 73 skins ship in the build) plus every Steam inventory definition
+  (`workshopid` + `itemshortname` custom properties; 5,767 on AU), polled until Steam populates
+  them; (2) the tag guess falls back to a **forgiving resolver** (exact shortname → display name
+  → case-insensitive → *unique* substring: "l96", "L96 Rifle", "rifle.l96" all → `rifle.l96`)
+  plus a **Steam-tag alias table** for the wordings that match nothing ("AK47" → `rifle.ak`,
+  "Bolt Rifle" → `rifle.bolt`, "Work Boots" → `shoes.boots`, "Roadsign Pants" →
+  `roadsign.kilt`, "Miner Hat" → `hat.miner`, "Pick Axe" → `pickaxe` …), each alias ignored
+  if its shortname doesn't exist on the running build; (3) the manual box, `/mixskinsadd` and
+  `mixskins.add` all go through the resolver and answer with candidates instead of BAD
+  SHORTNAME; (4) `mixskins.lookup <text>` lists what the server knows for an item/skin/id.
+- **Sections (owner's ask: the collection separate from the main skins)**: `SkinEntry.section`
+  — a collection import stamps its Steam title on every entry; the player picker gets a chip
+  row (ALL / MAIN / each section, only drawn when a section exists) and filters by it; the
+  browse grid gets **ADD ALL (n)** for a fetched collection; `mixskins.importcollection <id>`
+  does the same from RCON. Ran it live on "CyberKnights of Rust" (id 3755911594, 50 items):
+  first pass 41 added / 7 unresolved, aliases brought 6 more → **47 in the section, L96
+  included as `rifle.l96`**; the one straggler is tagged just "Sword" (Longsword vs Salvaged
+  Sword is genuinely ambiguous — left for the owner to name).
+- **Two mistakes of mine worth the ink.** (a) *Deployed a file that had failed to compile.*
+  My shell chain piped `compile.sh` into `grep`, so the step's exit code was grep's (matched
+  = 0) and the `&&` chain marched on; MixSkinsLight was FAILED on both servers for ~2 minutes.
+  Rule: **never pipe the compile step; capture its own rc and gate the deploy on it** (done
+  since). (b) *Read the whitelist with the wrong JSON key* (`Skins` vs the plugin's lowercase
+  `skins`) and briefly believed it was empty — a false alarm that could have sent me chasing
+  a data-loss ghost. Rule: **print the top-level keys before trusting any count of zero.**
+- **Cat 7 rule, general**: *any lookup that turns human wording into an identifier needs
+  three tiers — an authoritative index, a forgiving resolver, and a candidates list instead
+  of a bare "bad" — and the exact-match table you started with is the one that will fail on
+  the first item whose Steam tag isn't Rust's display name.*
 - **Launcher hardening**: the running-check in `Start-Dedicated-Detached.cmd` used `find`,
   which under a Git-bash-polluted PATH resolves to GNU find and fails; now `findstr`.
 
