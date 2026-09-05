@@ -3568,3 +3568,23 @@ itself should be rotated since it was exposed for an unknown time.
   is listed. Prices are placeholders.
 - Grok assets (`MixStore-Asset-List.txt`) and the in-game CUI store panel that needs them.
 - `CanBypassQueue` compiles and is hooked but was not exercised (no queue on either box).
+
+### Same day, later — Grok assets in, store re-themed; "how does Rustafied's queue skip work?" answered from IL
+
+- **Assets**: 48 files from the owner's MixStore-Assets repo, themed to the live MixMods page
+  (oxide red on weathered steel, not the gold I first specified — Grok was told to follow the
+  site and did). Originals are 1–1.7 MB each; `tools/mixstore-build-assets.py` crops the 7 %
+  safe margin (which also removes the generator watermark in the corner) and writes web sizes
+  to `store/assets/` (2.7 MB total for 38 files). Store CSS now uses the site's own tokens.
+- **Queue skip, ground truth** (`ConnectionQueue.CanJumpQueue` IL): vanilla lets through
+  `connection.skipQueue`, the developer list, ServerUsers owner/moderator, and Facepunch's
+  reserved slots. Oxide/Carbon add one more door: the **`CanBypassQueue(Connection)`** hook,
+  which Carbon patches into that method (`c.hooks` row: `CanBypassQueue … Success … 1 …
+  ConnectionQueue.CanJumpQueue` — the 1 is MixStore). That is the entire mechanism behind
+  every "VIP queue skip" on Rustafied-style servers: a permission plus a plugin that answers
+  the hook. MixStore 0.1.5 additionally calls vanilla `ConnectionQueue.SkipQueue(userid)` when
+  the queue-skip perm lands for someone already waiting, and `mixstore.queue` reports the
+  queue and who holds the perm.
+- **Not yet exercised with a real queue**: an admin can't test it (owners always jump). Test
+  recipe: on the dedicated box `server.maxplayers 0`, a non-admin joins → queued; simulate
+  `queue-skip` for their SteamID → they should be pulled in within one poll.
