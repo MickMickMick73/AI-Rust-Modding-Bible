@@ -3944,3 +3944,102 @@ and MixShowcase's restock-needs-a-player (low). Both parked until the owner want
   instead of dropping the weapon into the rack's hidden inventory (invisible, worse than empty).
   Verify at the next AU restart with the gallery empty and nobody connected: racks should fill
   at boot; if not, they fill within seconds of the first player connecting and the log says why.
+
+## Overnight sweep with Grok (2026-09-05 late → 2026-09-06 early) — seven batches on AU, then the checklist over all of them
+
+The owner went to sleep with the direction "deploy your fixes to AU and test them, keep going
+until you can't find any more problems — mods, server, you name it". Every batch below was
+handshaked with the second agent (PLAN → AGREE/AMEND → both READY), compiled in the offline
+harness against AU's assemblies, deployed to AU, proven by MixPlaytest or the owner, and synced
+byte-exact to the private mirror.
+
+- **MixApartmentHome 1.10.1** — `CheckCanDeploy` and `AllowRoomWiring` returned `true` on allow.
+  The game runs a hotbar deploy only when `CanDeployItem` returns null (Deployer.cs:183) and
+  connects a wire only when `OnWireConnect` returns null (WireTool.cs:600); `OnWireClear` returns a
+  bool verbatim and skips the disconnect. So every placement and wire action inside a rented room
+  was silently cancelled. **Cat 9 rule, sharpened**: *"allow" is `null`; any non-null return is a
+  veto for the Can*/On* family unless the decompiled call site says otherwise — read the site.*
+  Found by mechanical sweep: every `Interface.CallHook("X")` in Assembly-CSharp classified by what
+  the game does with the result, then every plugin's return values compared. Only this one was
+  wrong; FreeBuild/MixGovern/MixRaidBases/MixSiloRaid return `true` from `OnEntityTakeDamage` on
+  purpose (cancel), OSAutoTurrets' string/`true` returns are intentional.
+- **MixApartmentHome 1.10.2** — `/apt skin` called `MixSkinsLight.API_ApplySkinToEntity`, which does
+  not exist; `plugin.Call` on a missing method returns null without throwing, so the command
+  printed "applied" and applied nothing. Direct `skinID` path only. Same sweep found
+  `MixCore → MixSprint.API_RedrawEnergyBar` missing (**MixSprint 2.4.1** adds it) and
+  `MixWorld.API_OpenPlayerPanel` without `[HookMethod]` (**MixWorld 0.7.8**). Cat 9: *every
+  `plugin.Call("API_…")` must resolve to a `[HookMethod]` — grep both sides, not one.*
+- **MixApartmentHome 1.10.3** — the real defect of the round. `HandleEntityDeployed`
+  (`OnItemDeployed`, fires for every Deployer-placed item by anyone anywhere: locks, sleeping
+  bags) ran `FinalizeDeployedEntity`, which stripped `GroundWatch`/`DestroyOnGroundMissing`
+  (`StripGroundWatch=true` on AU), snapped the entity to the surface below, force-on'd switches
+  and auto-powered — with no room check (it looked the room up and ignored a null). A bag on a
+  raided floor never fell. Now returns when the placement is not in an apartment. Also
+  behaviour-neutral cost gates: empty room cache → out; a squared-distance pre-check against the
+  cached room list before any permission lookup, trigger walk, raycast or reflection. Measured
+  with a real player: 360 placements cost 8 ms total (was ~4 ms each). Cat 2 + Cat 7: *a hook
+  that fires server-wide must prove the entity is in scope before it touches it.*
+- **MixSprint 2.4.0** — `OnPlayerInput` (~30 calls/s/player) did `userId.ToString()`, two
+  dictionary lookups and two permission checks per tick; now one `HashSet<ulong>.Contains`, the
+  0.25 s tick that already owns energy/exhaustion maintains the set. 14 → 3.5 µs per fire, no
+  per-tick allocation. Cat 2: *the hot hook reads a flag; the slow tick computes it.*
+- **MixHud 4.2.0** — the event wells came from a full `serverEntities` walk (87k on AU) every 12 s,
+  invisible in `c.plugins` because timers are not hook time. Now typed sets fed by
+  `OnEntitySpawned` / `OnEntityKill(BaseNetworkable)` (the `BaseNetworkable` parameter is what
+  Carbon patches — a `BaseEntity` overload may never fire), with a 60 s reconcile walk keeping
+  the prefab-name fallbacks. Cat 2: *timer-driven world walks are the cost the hook table cannot
+  show; look for `foreach … serverEntities` inside `timer.Every` bodies.*
+- **MixGovern 0.9.20 → 0.9.21** — the owner got stuck after stopping a spectate. Vanilla's
+  `spectate` command kills the player first and exits only through `RespawnAt`; `StartSpectating`
+  cancels the `InventoryUpdate` invoke and only `EndSleeping` re-arms it. MixGovern spectated a
+  living admin and called `StopSpectating()` alone. 0.9.20 added `Teleport(origin)` — and was
+  still wrong: `BasePlayer.Teleport` is `MovePosition` + a `ForcePositionTo` RPC, it never sleeps
+  the player, so the inventory loop stayed dead (a shop buy landed server-side, the client was
+  never told; relog healed it). 0.9.21 re-arms `InventoryUpdate` exactly as `EndSleeping` does and
+  refuses sleeping/offline targets (vanilla `UpdateSpectateTarget(ulong)` only searches
+  `activePlayerList`, so a sleeper leaves the admin in a targetless spectate). Cat 11 rule: *when
+  a plugin enters a vanilla state by a path vanilla never uses, the exit must reproduce every side
+  effect of vanilla's exit — read the exit, not just the entry.* The "proven" claim was corrected
+  twice on the way; the honest status is: release path proven live, camera attachment not yet
+  exercised (needs an online target).
+- **MixUiFix 1.4.0** — on every container open by anyone (and again 0.25 s after every close) it
+  destroyed 35 UI roots × 11 suffixes + 9 orphans, poked MixCore by reflection and called two
+  cross-plugin APIs: 394 RPCs, 1.1 ms and 5 KB per open, 8,565 opens in one player's session.
+  Every plugin whose panel is listed already closes itself on `OnLootEntity`. The loot path now
+  destroys only cursor-trapping roots of loaded plugins (root/.Dim/.Cursor); the full sweep stays
+  on connect, sleep-end, `/cursor`, `/closeui` and the API. Hook cost 0.35 ms → 0.006 ms per open.
+  Cat 6: *a safety net that runs on a hot path must be sized to what can actually be stuck.*
+- **Box + site**: nightly backup cron (there was none — 04:17, tar of save + carbon, 7 kept,
+  first run 267 MB in 10 s); `mixapps.store` now sends `X-Content-Type-Options`,
+  `X-Frame-Options`, `Referrer-Policy` (none before; HSTS deliberately held for the owner);
+  MixPlaytest `AnnounceInChat=false` so live tests stop broadcasting to other players.
+- **Catalogue validation** (owner's ask, against RogueDepot's item page and the Rust client's
+  `Bundles/items`): four dead shop entries (`chocholate` → `chocolate`; `car.key`, `habrepair`,
+  `scraptransportheli.repair` dropped), MixAngler `fish.orangesmall` → `fish.orangeroughy`. The
+  shop charges before delivery but refunds when the item cannot be created; no BUY FAIL for any
+  of the four in the log, so nobody was charged.
+- **Not fixable server-side, recorded**: room 308's couch and coffee table after a rent are
+  client-side baked visuals keyed to the room's rent state (server list = bed + door before and
+  after upkeep); hiding them means faking "rent overdue" to the client, which also kills the room
+  light. Owner's call.
+- **Process notes**: `Path.read_text()` translates CRLF, so a `"\r\n" in s` check never fires —
+  MixUiFix (the pack's one CRLF plugin) was written back LF and caught by an 862-line diff for a
+  40-line change; patch scripts now read/write bytes. `scp` as root leaves plugin files Carbon
+  cannot open (UnauthorizedAccess on compile) — `install -o rustserver` every time; ten stale
+  root-owned files swept.
+
+### Checklist pass over that round (2026-09-06, early) — 3 minor findings, all fixed
+
+- **Cat 1** MixApartmentHome still declared `CanDeployEntity` and `OnEntityDeployed`, neither with a
+  call site in this Rust build (`CanDeployItem` / `OnItemDeployed` do the work) — removed (1.10.4).
+- **Cat 2** MixHud's new spawn/kill hooks ran even with `Enabled` or `ShowEvents` off — first-line
+  exit added (4.2.1).
+- **Cat 4** MixGovern `Unload` released spectators but never cleared `_spectateOrigin` — cleared
+  (0.9.22).
+- Cats 3, 5–12 clean: no new I/O in hot paths; no new permissions; every new CUI path tears down
+  through the owner's close helpers; `ent.net`, `IsConnected` and destroyed-component nulls
+  guarded; the Harmony patch and the inventory re-arm are wrapped; every cross-plugin call now
+  resolves; backup tarballs chowned; `Unload` unpatches before saving; statics are a `FieldInfo`
+  and a cleared instance ref. Second agent's independent read of the same diffs: no further
+  findings.
+- Deployed dedicated-first, then AU; mirror synced. Dedicated: Hud 4.2.1, Govern 0.9.22, Apartment 1.10.4 loaded clean at boot (0 failed). AU 06:58: all three loaded, 0 failed. Mirror e3b401b, zero drift.
