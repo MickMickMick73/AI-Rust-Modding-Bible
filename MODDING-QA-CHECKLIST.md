@@ -3443,7 +3443,9 @@ session scratchpad for diffing.
   does the same from RCON. Ran it live on "CyberKnights of Rust" (id 3755911594, 50 items):
   first pass 41 added / 7 unresolved, aliases brought 6 more → **47 in the section, L96
   included as `rifle.l96`**; the one straggler is tagged just "Sword" (Longsword vs Salvaged
-  Sword is genuinely ambiguous — left for the owner to name).
+  Sword is genuinely ambiguous — owner said Longsword; added, and since a hand-added skin
+  lands in the main list, 1.15.2 gained `mixskins.setsection <id> <section|main>` to re-home
+  it — **48 in the section, 23 main, 71 total**).
 - **Two mistakes of mine worth the ink.** (a) *Deployed a file that had failed to compile.*
   My shell chain piped `compile.sh` into `grep`, so the step's exit code was grep's (matched
   = 0) and the `&&` chain marched on; MixSkinsLight was FAILED on both servers for ~2 minutes.
