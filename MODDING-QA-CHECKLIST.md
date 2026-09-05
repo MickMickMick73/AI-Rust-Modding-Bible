@@ -3866,3 +3866,21 @@ BagTimer (`SleepingBag.unlockTime`), MixAdminMove, MixRackKit, MixBoatHelm (driv
 through server-side motor/anchor state), Salvo (extra rockets are server entities, unlike
 pellets). Not read line-by-line: MixApartmentHome, MixInstantBases, MixRaidBases, MixSiloRaid
 (hooks all patched; mechanism is entity spawning, which the server owns).
+
+### Owner's test results on the static-read suspects + a live MixSprint bug (2026-09-05, night)
+
+- **MixSuitSlots: works** — extra kit goes on over a hazmat as intended. Suspect #2 was wrong:
+  the client does *not* pre-validate wear-slot occupation (or accepts the server's answer), so a
+  server-side patch of the wearable definitions is enough. Recorded as a negative result: "the
+  client validates X locally" is an assumption that needs the same test as any other claim.
+- **MixHeadlamp**: owner will retest at night (daylight test inconclusive). Still suspect #1.
+- **MixSky**: owner tested; the plugin logs nothing on `/sky`, so the server can't say what
+  happened — outcome to come from the owner. Added to the list of things that should log.
+- **MixSprint 2.3.1 → 2.3.2 (real bug, owner-found)**: "hold shift to sprint, release, the
+  character keeps sprinting and the bar refills". `GetMoveTier` judged sprinting purely from the
+  SPRINT input bit in `serverInput`; the authoritative flag is the client-reported model state
+  (`BasePlayer.IsRunning()` → `modelState.sprinting`, the same thing Rust's own movement code
+  trusts). Toggle-sprint clients, and any release-while-moving, sprint without the bit → tier 3
+  → regen. Now `IsRunning()` OR the bit. Compile rc 0 / `NO_PROXY=1` rc 0, dedicated → AU.
+  Lesson for Cat 7: **when a plugin infers a player's state, use the field Rust itself uses for
+  that state, not the input that usually produces it.**
